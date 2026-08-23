@@ -12,8 +12,10 @@
     <main id="launcher-main">
       <div id="launcher-meta">
         <span id="version-badge" class="muted"></span>
+        <button id="btn-check-update" class="chip-btn" onclick="UI.manualCheckUpdate()">检查更新</button>
         <span id="update-badge" class="update-badge hidden">⚠ 可更新</span>
       </div>
+      <div id="toast" class="hidden"></div>
 
       <div id="checking-view" class="center-view">
         <div class="spinner"></div>
@@ -45,6 +47,10 @@
           <p class="muted" id="busy-text">处理中…</p>
         </div>
 
+        <button id="btn-settings" class="action-btn hidden" onclick="UI.openSettings()">
+          <span class="icon">⚙</span><span class="t">设置</span>
+        </button>
+
         <button id="btn-uninstall" class="action-btn">
           <span class="icon">🗑</span><span class="t">卸载 DeepSeek Harness</span>
         </button>
@@ -72,6 +78,27 @@
         <button class="btn primary" id="btn-do-update" onclick="UI.doUpdate()">立即更新</button>
       </div>
       <div id="update-log" class="log"></div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div id="modal-settings" class="hidden">
+    <div class="modal-card">
+      <h3>设置</h3>
+      <p class="muted">✕ 关闭行为</p>
+      <label class="chk"><input type="radio" name="close-mode" value="exit" /> 退出主程序（同时结束 dsh）</label>
+      <label class="chk"><input type="radio" name="close-mode" value="minimize" /> 隐藏到任务栏托盘（dsh 继续运行）</label>
+      <p class="muted">启动器壁纸</p>
+      <div class="row">
+        <span class="muted" id="bg-status">默认壁纸</span>
+        <label class="btn file-btn">选择图片…
+          <input type="file" id="bg-file" accept="image/png,image/jpeg,image/webp" style="display:none" />
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" onclick="UI.closeSettings()">关闭</button>
+        <button class="btn primary" onclick="UI.saveSettings()">保存</button>
+      </div>
     </div>
   </div>
 

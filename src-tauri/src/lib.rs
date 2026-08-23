@@ -6,11 +6,13 @@ mod updater;
 
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::{LogicalPosition, LogicalSize, Rect, State, Window};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Rect, State, Window};
 
 pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
     pub embed: Mutex<Option<tauri::webview::Webview>>,
+    pub controls: Mutex<Option<tauri::webview::Webview>>,
+    pub modal_back: Mutex<Option<tauri::Rect>>,
 }
 
 impl Default for AppState {
@@ -18,6 +20,8 @@ impl Default for AppState {
         AppState {
             dsh: Mutex::new(dsh_process::DshState::default()),
             embed: Mutex::new(None),
+            controls: Mutex::new(None),
+            modal_back: Mutex::new(None),
         }
     }
 }
@@ -34,6 +38,8 @@ pub struct StatusInfo {
     pub port_pid: Option<u32>,
     pub update_available: bool,
     pub latest_version: Option<String>,
+    pub node_version: Option<String>,
+    pub npm_version: Option<String>,
 }
 
 #[tauri::command]
@@ -69,6 +75,8 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         port_pid: dsh_process::port_pid(),
         update_available: false,
         latest_version: None,
+        node_version: cmd_version("node"),
+        npm_version: cmd_version("npm"),
     }
 }
 
@@ -233,6 +241,189 @@ async fn update_embed_bounds(
     Ok(())
 }
 
+/// 快速读取一个命令的版本输出（node --version / npm --version）
+fn cmd_version(cmd: &str) -> Option<String> {
+    let out = std::process::Command::new(cmd).arg("--version").output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// ===== 悬浮控制（页面 2 的 ─ □ ✕）=====
+
+const CONTROLS_LABEL: &str = "dsh-controls";
+
+#[tauri::command]
+async fn show_controls(
+    window: Window,
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<serde_json::Value, String> {
+    let mut guard = state.controls.lock().unwrap();
+    let rect = Rect {
+        position: LogicalPosition::new(x, y).into(),
+        size: LogicalSize::new(width, height).into(),
+    };
+    if let Some(wv) = guard.as_ref() {
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+        return Ok(serde_json::json!({ "ok": true }));
+    }
+    let builder = tauri::webview::WebviewBuilder::new(
+        CONTROLS_LABEL,
+        tauri::WebviewUrl::App("controls.html".into()),
+    );
+    let wv = window
+        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .map_err(|e| format!("创建控制条失败: {}", e))?;
+    *guard = Some(wv);
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn hide_controls(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.controls.lock().unwrap();
+    if let Some(wv) = guard.take() {
+        wv.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_controls_bounds(
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let guard = state.controls.lock().unwrap();
+    if let Some(wv) = guard.as_ref() {
+        let rect = Rect {
+            position: LogicalPosition::new(x, y).into(),
+            size: LogicalSize::new(width, height).into(),
+        };
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 弹窗时把控制条 webview 扩展为全窗口（弹窗可居中浮于 DSH 之上）
+#[tauri::command]
+async fn show_modal_overlay(window: Window, state: State<'_, AppState>) -> Result<(), String> {
+    let guard = state.controls.lock().unwrap();
+    if let Some(wv) = guard.as_ref() {
+        let prev = wv.bounds().map_err(|e| e.to_string())?;
+        *state.modal_back.lock().unwrap() = Some(prev);
+        let size = window.inner_size().map_err(|e| e.to_string())?;
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let rect = Rect {
+            position: LogicalPosition::new(0.0, 0.0).into(),
+            size: LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale).into(),
+        };
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn hide_modal_overlay(state: State<'_, AppState>) -> Result<(), String> {
+    let prev = state.modal_back.lock().unwrap().take();
+    let guard = state.controls.lock().unwrap();
+    if let (Some(wv), Some(rect)) = (guard.as_ref(), prev) {
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 回到页面 1：关闭两个子 webview，并通知主 webview 刷新状态
+#[tauri::command]
+async fn back_to_launcher(
+    window: Window,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let mut g = state.embed.lock().unwrap();
+        if let Some(wv) = g.take() {
+            let _ = wv.close();
+        }
+    }
+    {
+        let mut g = state.controls.lock().unwrap();
+        if let Some(wv) = g.take() {
+            let _ = wv.close();
+        }
+    }
+    let _ = window.emit("back-to-launcher", ());
+    Ok(())
+}
+
+#[tauri::command]
+fn win_minimize(window: Window) -> Result<(), String> {
+    window.minimize().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn win_toggle_maximize(window: Window) -> Result<(), String> {
+    if window.is_maximized().unwrap_or(false) {
+        window.unmaximize().map_err(|e| e.to_string())
+    } else {
+        window.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn win_close(window: Window) -> Result<(), String> {
+    let _ = window.close();
+    Ok(())
+}
+
+#[tauri::command]
+fn start_drag(window: Window) -> Result<(), String> {
+    window.start_dragging().map_err(|e| e.to_string())
+}
+
+/// ===== 设置存储（%LOCALAPPDATA%/dsh-up/settings.json）=====
+
+fn settings_path() -> std::path::PathBuf {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
+}
+
+fn settings_snapshot() -> serde_json::Value {
+    std::fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+#[tauri::command]
+fn get_close_default() -> Option<String> {
+    settings_snapshot()
+        .get("close_default")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+#[tauri::command]
+fn set_close_default(value: String) -> Result<(), String> {
+    if value != "exit" && value != "minimize" {
+        return Err("无效的默认值".into());
+    }
+    let mut s = settings_snapshot();
+    s["close_default"] = serde_json::json!(value);
+    let dir = settings_path().parent().unwrap().to_path_buf();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap())
+        .map_err(|e| e.to_string())
+}
+
+/// ===== 设置存储结束 =====
+
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -265,7 +456,19 @@ pub fn run() {
             uninstall,
             show_embed,
             hide_embed,
-            update_embed_bounds
+            update_embed_bounds,
+            show_controls,
+            hide_controls,
+            update_controls_bounds,
+            show_modal_overlay,
+            hide_modal_overlay,
+            back_to_launcher,
+            win_minimize,
+            win_toggle_maximize,
+            win_close,
+            start_drag,
+            get_close_default,
+            set_close_default
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

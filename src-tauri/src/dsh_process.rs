@@ -34,7 +34,7 @@ pub fn port_open() -> bool {
 
 /// 第三层：netstat 反查 3080 监听 PID（识别外部启动的 dsh）
 pub fn port_pid() -> Option<u32> {
-    let out = Command::new("netstat").arg("-ano").output().ok()?;
+    let out = crate::winutil::exe_hidden("netstat", &["-ano"]).output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
         if line.contains(&format!(":{}", DSH_PORT)) && line.contains("LISTENING") {
@@ -62,30 +62,15 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
         return Err("dsh 进程已在运行".into());
     }
 
-    // 用 powershell -WindowStyle Hidden 包一层：
-    // 它创建一个【隐藏控制台】，node 与其所有子进程(npm/pnpm...)继承同一隐藏控制台
-    // ，而不是各自新建可见控制台(黑窗)。--no-open 禁止自动弹浏览器。
-    let mut cmd = Command::new("powershell.exe");
-    cmd.arg("-NoProfile")
-        .arg("-ExecutionPolicy")
-        .arg("Bypass")
-        .arg("-WindowStyle")
-        .arg("Hidden")
-        .arg("-Command")
-        .arg(format!(
-            "& '{}' '{}' web --no-open",
-            node.replace("'", "''"),
-            bin_js.replace("'", "''")
-        ));
-    // 隐藏控制台方案(实测最优):
-    // dsh 内部每0.5s spawn 短命 node 子进程(<300ms);
-    // 无台方案会让每个都新建可见台(黑窗x13);
-    // 隐藏台方案让全链路继承隐藏台(终端内跑 dsh 同样不闪的机制)
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0);
-    }
+    // 【DSH-Launcher 移植】直接 spawn node(无 powershell 中转):
+    // - windowsHide(true) = CREATE_NO_WINDOW(与社区 148-star 验证方案一致)
+    // - --profile web --no-open(等价 web 子命令, 官方推荐形式)
+    // - 无 powershell: 实测中转层会破坏隐藏链(13次黑窗元凶)
+    let mut cmd = Command::new(node);
+    cmd.arg(bin_js)
+        .arg("--profile")
+        .arg("web")
+        .arg("--no-open");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

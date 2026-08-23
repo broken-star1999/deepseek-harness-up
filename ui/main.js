@@ -266,7 +266,7 @@ const UI = {
           if (s.running) { clearInterval(timer); resolve(true); return; }
         } catch (e) {}
         if (Date.now() - t0 > seconds * 1000) { clearInterval(timer); resolve(false); }
-      }, 500);
+      }, 1000);
     });
   },
 

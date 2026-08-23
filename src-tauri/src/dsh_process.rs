@@ -56,10 +56,19 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
         return Err("dsh 进程已在运行".into());
     }
 
-    let mut cmd = Command::new(node);
-    // --no-open: dsh web 默认 openBrowser=true 会自动弹系统浏览器，
-    // 我们必须禁止（内嵌显示是唯一途径），否则每次启动都弹浏览器
-    cmd.arg(bin_js).arg("web").arg("--no-open");
+    // 用 powershell -WindowStyle Hidden 包一层：
+    // 它创建一个【隐藏控制台】，node 与其所有子进程(npm/pnpm...)继承同一隐藏控制台
+    // ，而不是各自新建可见控制台(黑窗)。--no-open 禁止自动弹浏览器。
+    let mut cmd = Command::new("powershell.exe");
+    cmd.arg("-NoProfile")
+        .arg("-WindowStyle")
+        .arg("Hidden")
+        .arg("-Command")
+        .arg(format!(
+            "& '{}' '{}' web --no-open",
+            node.replace("'", "''"),
+            bin_js.replace("'", "''")
+        ));
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

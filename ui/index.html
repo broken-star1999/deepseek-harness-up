@@ -38,12 +38,13 @@
         </button>
 
         <button id="btn-open" class="action-btn disabled hidden">
-          <span class="icon">🌐</span><span class="t">打开 dsh</span>
+          <span class="icon">🌐</span><span class="t">打开 DeepSeek Harness</span>
         </button>
 
         <div id="busy-view" class="hidden">
           <div class="spinner"></div>
           <p class="muted" id="busy-text">处理中…</p>
+          <pre id="busy-log" class="busy-log"></pre>
         </div>
 
         <button id="btn-settings" class="action-btn hidden" onclick="UI.openSettings()">

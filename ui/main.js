@@ -65,6 +65,18 @@ const UI = {
       }
     });
 
+    // 页面2 心跳：核心崩溃检测（15s 间隔）
+    setInterval(async () => {
+      if (!this.embedActive) return;
+      try {
+        const s = await invoke('get_status');
+        if (!s.running) {
+          this.toast('dsh 核心已停止，已返回启动器', 'warn');
+          try { await invoke('back_to_launcher'); } catch (e) {}
+        }
+      } catch (e) {}
+    }, 15000);
+
     await this.checkEnv();
   },
 
@@ -177,7 +189,7 @@ const UI = {
         await invoke('env_action', { action: 'install_dsh' });
       }
     } catch (e) {
-      alert('操作失败: ' + e);
+      this.toast('操作失败: ' + e, 'warn');
     } finally {
       this.busy = false;
       await this.checkEnv();
@@ -336,7 +348,7 @@ const UI = {
 
   async fail(msg) {
     this.busy = false;
-    alert(msg);
+    this.toast(msg, 'warn');
     await this.checkEnv();
   },
 
@@ -490,10 +502,9 @@ const UI = {
     const launcher = document.getElementById('launcher');
     if (!launcher) return;
     try {
-      const bg = await invoke('get_bg');
-      if (bg) {
-        const src = window.__TAURI__.core.convertFileSrc(bg);
-        launcher.style.backgroundImage = "url('" + src + "')";
+      const bgData = await invoke('get_bg_data');
+      if (bgData) {
+        launcher.style.backgroundImage = "url('" + bgData + "')";
         document.getElementById('bg-status').textContent = '自定义壁纸';
       } else {
         launcher.style.backgroundImage = "url('bg.png')";

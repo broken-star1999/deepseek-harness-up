@@ -1,2 +1,19 @@
    Compiling dsh-up-desktop v0.1.0 (C:\Users\star\Desktop\dsh-up\src-tauri)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.70s
+error[E0716]: temporary value dropped while borrowed
+   --> src\lib.rs:831:16
+    |
+831 |     let path = settings_snapshot().get("bg").and_then(|v| v.as_str())?;
+    |                ^^^^^^^^^^^^^^^^^^^                                    - temporary value is freed at the end of this statement
+    |                |
+    |                creates a temporary value which is freed while still in use
+832 |     let bytes = std::fs::read(path).ok()?;
+    |                               ---- borrow later used here
+    |
+help: consider using a `let` binding to create a longer lived value
+    |
+831 ~     let binding = settings_snapshot();
+832 ~     let path = binding.get("bg").and_then(|v| v.as_str())?;
+    |
+
+For more information about this error, try `rustc --explain E0716`.
+error: could not compile `dsh-up-desktop` (lib) due to 1 previous error

@@ -167,8 +167,7 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
         }
         "stop_port_owner" => {
             if let Some(pid) = dsh_process::port_pid() {
-                let ok = std::process::Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/T", "/F"])
+                let ok = crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
                     .output()
                     .map(|o| o.status.success())
                     .unwrap_or(false);
@@ -330,7 +329,7 @@ fn extract_bg_hex(html: &str) -> Option<String> {
 }
 
 fn cmd_version(cmd: &str) -> Option<String> {
-    let out = std::process::Command::new(cmd).arg("--version").output().ok()?;
+    let out = crate::winutil::cmd_hidden(&["/C", cmd, "--version"]).output().ok()?;
     if !out.status.success() {
         return None;
     }

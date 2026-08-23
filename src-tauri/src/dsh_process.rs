@@ -82,11 +82,13 @@ pub fn stop(state: &mut DshState) -> Result<(), String> {
     }
     // 外部进程：按 PID 结束（调用方需已确认）
     if let Some(pid) = port_pid() {
-        let ok = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
+        let ok = crate::winutil::exe_hidden(
+            "taskkill",
+            &["/PID", &pid.to_string(), "/T", "/F"],
+        )
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
         if ok {
             return Ok(());
         }

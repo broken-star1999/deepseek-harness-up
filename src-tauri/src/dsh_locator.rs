@@ -21,8 +21,7 @@ impl DshLocator {
 
 /// npm 全局 root（例: C:\Users\xxx\AppData\Roaming\npm）
 pub fn npm_global_root() -> Option<String> {
-    let out = Command::new("cmd")
-        .args(["/C", "npm", "root", "-g"])
+    let out = crate::winutil::cmd_hidden(&["/C", "npm", "root", "-g"])
         .output()
         .ok()?;
     if !out.status.success() {

@@ -15,7 +15,8 @@ pub struct CheckItem {
 }
 
 fn run_version(cmd: &str, arg: &str) -> Option<String> {
-    let out = Command::new(cmd).arg(arg).output().ok()?;
+    // 通过 cmd /C 执行(node.exe 无窗口; npm.cmd 批处理必须经 cmd, 隐藏窗口)
+    let out = crate::winutil::cmd_hidden(&["/C", cmd, arg]).output().ok()?;
     if !out.status.success() {
         return None;
     }

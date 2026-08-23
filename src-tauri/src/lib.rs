@@ -130,6 +130,8 @@ fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
         let fresh = dsh_locator::locate();
         *state.locator_cache.lock().unwrap() = Some((now, fresh));
     }
+    // 【采样器已移除】实测证明其 tasklist 轮询（每 0.5s）本身产生 conhost 窗口 = 黑窗元凶
+
     let loc = dsh_locator::locate();
     if !loc.installed() {
         return Err("未检测到全局 dsh，请先到体检页一键安装".into());

@@ -67,6 +67,8 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
     // ，而不是各自新建可见控制台(黑窗)。--no-open 禁止自动弹浏览器。
     let mut cmd = Command::new("powershell.exe");
     cmd.arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
         .arg("-WindowStyle")
         .arg("Hidden")
         .arg("-Command")
@@ -75,6 +77,12 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
             node.replace("'", "''"),
             bin_js.replace("'", "''")
         ));
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // 无控制台创建: powershell/node 本身零窗口
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

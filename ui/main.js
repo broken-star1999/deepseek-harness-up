@@ -46,7 +46,10 @@ const UI = {
     document.getElementById('btn-uninstall').onclick = () => this.openModal();
     document.getElementById('btn-node').onclick = () => this.busyAction('installNode');
     document.getElementById('btn-dsh').onclick = () => this.busyAction('installDsh');
-    document.getElementById('btn-core').onclick = () => this.launch();
+    document.getElementById('btn-core').onclick = () => {
+      if (this.ctx && this.ctx.running) this.stopCore();
+      else this.launch();
+    };
     document.getElementById('btn-open').onclick = () => this.openDsh();
 
     window.addEventListener('keydown', (ev) => {
@@ -107,18 +110,19 @@ const UI = {
     const coreLabel = document.getElementById('core-label');
     const openSub = document.getElementById('open-sub');
     if (!coreBtn) return;
+    // 核心按钮：未运行=绿色"启动核心"，运行中=红色"停止核心"
     if (c.running) {
-      // 核心已运行
-      coreBtn.classList.remove('green', 'disabled');
-      coreBtn.disabled = true;
-      coreBtn.classList.add('green');
-      coreLabel.textContent = 'dsh 核心已运行';
+      coreBtn.classList.remove('disabled', 'green');
+      coreBtn.classList.add('red');
+      coreBtn.disabled = false;
+      coreLabel.textContent = '停止核心';
       openBtn.classList.remove('disabled');
       openBtn.classList.add('green');
       openBtn.disabled = false;
       openSub.textContent = '进入 127.0.0.1:3080 界面';
     } else if (c.booting) {
-      coreBtn.classList.remove('green');
+      coreBtn.classList.remove('green', 'red');
+      coreBtn.classList.add('disabled');
       coreBtn.disabled = true;
       coreLabel.textContent = '核心启动中…';
       openBtn.classList.add('disabled');
@@ -126,15 +130,31 @@ const UI = {
       openBtn.disabled = true;
       openSub.textContent = '等待核心启动…';
     } else {
-      // 未运行
-      coreBtn.classList.remove('green', 'disabled');
+      // 未运行：绿色启动核心
+      coreBtn.classList.remove('disabled', 'red');
+      coreBtn.classList.add('green');
       coreBtn.disabled = false;
-      coreLabel.textContent = '启动 dsh 核心';
+      coreLabel.textContent = '启动核心';
       openBtn.classList.add('disabled');
       openBtn.classList.remove('green');
       openBtn.disabled = true;
       openSub.textContent = '先启动核心…';
     }
+  },
+
+  async stopCore() {
+    if (this.busy) return;
+    this.busy = true;
+    try { await invoke('fe_log', { msg: 'ACTION UI: stop core clicked' }); } catch (e) {}
+    try {
+      await invoke('stop_dsh');
+      document.getElementById('core-label').textContent = '正在停止…';
+      this.ctx.running = false;
+    } catch (e) {
+      try { await invoke('fe_log', { msg: 'ERROR stop core: ' + e }); } catch (e2) {}
+    }
+    this.busy = false;
+    await this.checkEnv();
   },
 
   async busyAction(kind) {

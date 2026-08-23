@@ -69,6 +69,12 @@ body {
 }
 .action-btn.disabled:hover { border-color: var(--border); transform: none; }
 .action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.action-btn.red {
+  background: rgba(239, 91, 91, 0.12);
+  border-color: rgba(239, 91, 91, 0.55);
+}
+.action-btn.red .icon { color: var(--red); }
+.action-btn.red .t { color: var(--red); }
 
 /* ===== 页面 2 ===== */
 #dsh-page { position: fixed; inset: 0; background: #0b0f1a; }

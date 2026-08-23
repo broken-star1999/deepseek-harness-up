@@ -9,6 +9,8 @@ const UI = {
   _resizeTimer: null,
 
   async init() {
+    // 统一顶栏：启动即显示（logo/名称/拖拽/─□✕）
+    try { await invoke('show_controls', this.ctrlRect()); } catch (e) {}
     // Esc 返回页面 1 后的事件
     try {
       window.__TAURI__.event.listen('back-to-launcher', async () => {
@@ -24,16 +26,11 @@ const UI = {
     window.addEventListener('resize', () => {
       clearTimeout(this._resizeTimer);
       this._resizeTimer = setTimeout(() => {
+        invoke('update_controls_bounds', this.ctrlRect()).catch(() => {});
         if (this.embedActive) this.layoutDshPage();
       }, 120);
     });
 
-    // 顶部条拖拽（无边框窗口）",
-    document.getElementById('topstrip').addEventListener('mousedown', (ev) => {
-      if (ev.button === 0 && !ev.target.closest('button, a, .update-badge')) {
-        invoke('start_drag');
-      }
-    });
     document.getElementById('btn-uninstall').onclick = () => this.openModal();
     document.getElementById('btn-node').onclick = () => this.busyAction('installNode');
     document.getElementById('btn-dsh').onclick = () => this.busyAction('installDsh');
@@ -129,7 +126,6 @@ const UI = {
     this.busy = false;
     await this.layoutDshPage();
     try { await invoke('show_embed', this.embedRect()); } catch (e) {}
-    try { await invoke('show_controls', this.ctrlRect()); } catch (e) {}
     this.embedActive = true;
     this.controlsActive = true;
     document.getElementById('dsh-loading').classList.add('hidden');
@@ -162,7 +158,8 @@ const UI = {
 
   ctrlRect() {
     const w = window.innerWidth;
-    return { x: w - 150, y: 0, width: 150, height: 36 };
+    // 顶部通栏拖拽条（全宽，靠渐变半透明自动适配背景色）
+    return { x: 0, y: 0, width: w, height: 38 };
   },
 
   async layoutDshPage() {

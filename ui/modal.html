@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>confirm</title>
+  <link rel="stylesheet" href="modal.css" />
+</head>
+<body>
+  <div class="modal-card">
+    <div class="options">
+      <label class="radio">
+        <input type="radio" name="close-mode" value="minimize" checked />
+        <span class="dot"></span>
+        <span>隐藏到任务栏托盘</span>
+      </label>
+      <label class="radio">
+        <input type="radio" name="close-mode" value="exit" />
+        <span class="dot"></span>
+        <span>退出主程序</span>
+      </label>
+    </div>
+    <div class="row-center">
+      <button id="modal-ok" class="btn-ok">确定</button>
+    </div>
+    <label class="chk-center">
+      <input type="checkbox" id="modal-default" />
+      <span>不再提醒我</span>
+    </label>
+  </div>
+  <script src="modal.js"></script>
+</body>
+</html>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" width="140" alt="DeepSeek Harness Up" />
+</p>
+
 # DeepSeek Harness Up 🐋
 
 ![CI](https://github.com/broken-star1999/deepseek-harness-up/actions/workflows/ci.yml/badge.svg)

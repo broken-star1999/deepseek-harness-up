@@ -34,7 +34,8 @@ const UI = {
     document.getElementById('btn-uninstall').onclick = () => this.openModal();
     document.getElementById('btn-node').onclick = () => this.busyAction('installNode');
     document.getElementById('btn-dsh').onclick = () => this.busyAction('installDsh');
-    document.getElementById('btn-launch').onclick = () => this.launch();
+    document.getElementById('btn-core').onclick = () => this.launch();
+    document.getElementById('btn-open').onclick = () => this.openDsh();
 
     window.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') {
@@ -74,14 +75,54 @@ const UI = {
     // 版本信息
     document.getElementById('version-badge').textContent =
       c.dshVersion ? '版本 ' + c.dshVersion : (hasNode ? '环境就绪' : '');
-    // 按钮栈：只显示当下需要的
+    // ① 环境缺失：只显示对应安装按钮
     document.getElementById('btn-node').classList.toggle('hidden', hasNode);
     document.getElementById('btn-dsh').classList.toggle('hidden', hasDsh);
-    document.getElementById('btn-launch').classList.toggle('hidden', !(hasNode && hasDsh));
-    const sub = document.getElementById('launch-sub');
-    if (sub) sub.textContent = c.running ? '继续会话' : '进入 127.0.0.1:3080 界面';
+    // ② dsh 就绪：核心启动/打开界面/卸载
+    const ready = hasNode && hasDsh;
+    document.getElementById('btn-core').classList.toggle('hidden', !ready);
+    document.getElementById('btn-open').classList.toggle('hidden', !ready);
+    document.getElementById('btn-uninstall').classList.toggle('hidden', !hasDsh);
+    this.applyButtonStates(c);
     document.getElementById('checking-view').classList.add('hidden');
     document.getElementById('action-view').classList.remove('hidden');
+  },
+
+  // 按钮色态：核心未启动=打开灰；核心运行=打开绿
+  applyButtonStates(c) {
+    const coreBtn = document.getElementById('btn-core');
+    const openBtn = document.getElementById('btn-open');
+    const coreLabel = document.getElementById('core-label');
+    const openSub = document.getElementById('open-sub');
+    if (!coreBtn) return;
+    if (c.running) {
+      // 核心已运行
+      coreBtn.classList.remove('green', 'disabled');
+      coreBtn.disabled = true;
+      coreBtn.classList.add('green');
+      coreLabel.textContent = 'dsh 核心已运行';
+      openBtn.classList.remove('disabled');
+      openBtn.classList.add('green');
+      openBtn.disabled = false;
+      openSub.textContent = '进入 127.0.0.1:3080 界面';
+    } else if (c.booting) {
+      coreBtn.classList.remove('green');
+      coreBtn.disabled = true;
+      coreLabel.textContent = '核心启动中…';
+      openBtn.classList.add('disabled');
+      openBtn.classList.remove('green');
+      openBtn.disabled = true;
+      openSub.textContent = '等待核心启动…';
+    } else {
+      // 未运行
+      coreBtn.classList.remove('green', 'disabled');
+      coreBtn.disabled = false;
+      coreLabel.textContent = '启动 dsh 核心';
+      openBtn.classList.add('disabled');
+      openBtn.classList.remove('green');
+      openBtn.disabled = true;
+      openSub.textContent = '先启动核心…';
+    }
   },
 
   async busyAction(kind) {
@@ -158,21 +199,38 @@ const UI = {
 
   /* ========== 启动 → 页面 2 ========== */
 
+  // 启动 dsh 核心（后台 dsh web --no-open）
   async launch() {
     if (this.busy) return;
+    if (this.ctx && this.ctx.running) return; // 已运行则忽略
     this.busy = true;
-    this.showChecking();
-    // 确保 dsh 运行
-    const c = this.ctx || {};
-    if (!c.running) {
-      try { await invoke('start_dsh'); } catch (e) {
-        await this.fail('dsh 启动失败: ' + e);
-        return;
-      }
+    this.ctx = this.ctx || {};
+    this.ctx.booting = true;
+    this.applyButtonStates(this.ctx);
+    try {
+      await invoke('start_dsh');
+    } catch (e) {
+      this.ctx.booting = false;
+      await this.fail('dsh 核心启动失败: ' + e);
+      return;
     }
-    // 等 3080 就绪
     const ok = await this.waitPort(30);
-    if (!ok) { await this.fail('等待 dsh 服务超时（30s）'); return; }
+    this.busy = false;
+    if (!ok) {
+      this.ctx.booting = false;
+      await this.fail('等待 dsh 服务超时（30s）');
+      return;
+    }
+    try { await this.checkEnv(); } catch (e) {}
+  },
+
+  // 打开 dsh 界面（核心已运行才可点）
+  async openDsh() {
+    if (this.busy) return;
+    if (!(this.ctx && this.ctx.running)) {
+      return;
+    }
+    this.busy = true;
     // 进入页面 2
     document.getElementById('launcher').classList.add('hidden');
     document.getElementById('dsh-page').classList.remove('hidden');

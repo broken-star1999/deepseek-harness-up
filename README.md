@@ -24,7 +24,9 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 
 ## 🛡 非侵入原则
 
-工具只依赖 dsh 的**公共稳定边界**：CLI 命令、npm 生态、只读观测。绝不接触 `~/.dsh` 内部结构 / dsh 内部 API——因此 dsh 大版本更新后本工具**不会失效**。
+工具只依赖 dsh 的**公共稳定边界**：CLI 命令、npm 生态、只读观测。绝不接触 `~/.dsh` 内部结构 / dsh 内部 API。
+
+> ⚠️ **上游动态**：DeepSeek Harness 目前处于 developer preview，官方明确宣布**会有破坏性变更**（见上游 README）。本工具只踩公共边界，目的就是把这种变更的影响降到最低；若上游 CLI 有大变动，本工具会跟随适配。
 
 ## 📦 使用
 

@@ -1,3 +1,5 @@
+   Compiling tray-icon v0.24.2
+   Compiling tauri v2.11.5
    Compiling dsh-up-desktop v0.1.0 (C:\Users\star\Desktop\dsh-up\src-tauri)
 warning: fields `dsh_cmd` and `npm_root` are never read
   --> src\dsh_locator.rs:9:9
@@ -13,4 +15,4 @@ warning: fields `dsh_cmd` and `npm_root` are never read
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `dsh-up-desktop` (lib) generated 1 warning
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.68s
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 23.23s

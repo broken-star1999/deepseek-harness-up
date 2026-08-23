@@ -1,0 +1,6 @@
+feat: 系统托盘真·隐藏行为
+
+- tauri tray-icon feature + TrayIconBuilder 常驻托盘图标(机器人娘)
+- 弹窗选"隐藏到任务栏托盘" → main.hide()(任务栏无按钮) 而非 minimize
+- 托盘: 左键单击恢复主窗口; 右键菜单 显示主界面/退出
+- 顶栏「─」保持任务栏最小化语义不变

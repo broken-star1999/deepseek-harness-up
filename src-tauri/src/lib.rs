@@ -6,6 +6,8 @@ mod updater;
 
 use serde::Serialize;
 use std::sync::Mutex;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Window};
 
 pub struct AppState {
@@ -500,9 +502,10 @@ async fn dialog_confirm(
         log_line("dialog_confirm: app.exit(0)");
         app.exit(0);
     } else if let Some(main) = app.get_window("main") {
-        match main.minimize() {
-            Ok(()) => log_line("dialog_confirm: minimized ok"),
-            Err(e) => log_line(&format!("dialog_confirm: minimize err={}", e)),
+        // 隐藏到任务栏托盘：窗口隐藏（任务栏无按钮），托盘图标可点击恢复
+        match main.hide() {
+            Ok(()) => log_line("dialog_confirm: hidden to tray ok"),
+            Err(e) => log_line(&format!("dialog_confirm: hide err={}", e)),
         }
     }
     Ok(())
@@ -595,6 +598,45 @@ fn open_url(url: &str) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            // 系统托盘：常驻右下角，恢复窗口/退出入口
+            let show_item = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
+            TrayIconBuilder::with_id("dsh-up-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("dsh-up Desktop")
+                .menu(&menu)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "show" => {
+                        if let Some(w) = app.get_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    // 左键单击托盘 → 恢复主窗口
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(w) = app.get_window("main") {
+                            let _ = w.show();
+                            let _ = w.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             ping,

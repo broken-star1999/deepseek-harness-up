@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "dsh-up Desktop",
+  "productName": "DeepSeek Harness Up",
   "version": "0.1.0",
   "identifier": "com.dshup.desktop",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "dsh-up Desktop",
+        "title": "DeepSeek Harness Up",
         "width": 1200,
         "height": 780,
         "minWidth": 900,

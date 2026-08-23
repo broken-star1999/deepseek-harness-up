@@ -1,4 +1,4 @@
-# dsh-up Desktop — 需求规格说明书
+# DeepSeek Harness Up — 需求规格说明书
 
 > 独立 GUI 单 exe（非插件）：DSH 启动器 + 内嵌显示器 + 版本/卸载管理器
 > 技术栈：**Tauri 2（Rust 后端）+ 系统 WebView2 前端**

@@ -1,0 +1,6 @@
+chore: 发布准备(README/LICENSE/构建脚本)
+
+- README 重写为桌面版(功能/非侵入原则/使用/构建)
+- LICENSE(MIT)
+- build-release.ps1(构建+全名产物)
+- 项目正名 DeepSeek Harness Up

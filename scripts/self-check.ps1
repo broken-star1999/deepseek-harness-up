@@ -1,4 +1,4 @@
-# 项目自检：JS 语法 + 前后端命令契约 + DOM 引用
+﻿# 项目自检：JS 语法 + 前后端命令契约 + DOM 引用
 Set-Location "$PSScriptRoot\.."
 Write-Output "==> JS 语法检查"
 node --check ui\main.js

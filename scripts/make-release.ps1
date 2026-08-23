@@ -1,4 +1,4 @@
-# DeepSeek Harness Up 一键发布构建
+﻿# DeepSeek Harness Up 一键发布构建
 # 用法: .\scripts\make-release.ps1
 $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."

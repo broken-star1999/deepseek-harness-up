@@ -14,7 +14,7 @@ body {
 .muted { color: var(--muted); font-size: 13px; }
 
 /* ===== 页面 1 ===== */
-#launcher { display: flex; flex-direction: column; height: 100%; }
+#launcher { display: flex; flex-direction: column; height: 100%; padding-top: 38px; }
 #topstrip {
   display: flex; align-items: center; gap: 12px; padding: 8px 16px;
   background: var(--panel); border-bottom: 1px solid var(--border);
@@ -26,7 +26,11 @@ body {
   font-size: 12px; color: var(--yellow); border: 1px solid rgba(245,193,77,.5);
   padding: 2px 8px; border-radius: 10px; cursor: pointer;
 }
-#launcher-main { flex: 1; display: flex; align-items: center; justify-content: center; }
+#launcher-main { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; }
+#launcher-meta {
+  position: absolute; top: 10px; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+}
 .center-view {
   display: flex; flex-direction: column; align-items: center; gap: 14px;
 }
@@ -57,7 +61,7 @@ body {
 
 /* ===== 页面 2 ===== */
 #dsh-page { position: fixed; inset: 0; background: #0b0f1a; }
-#dsh-slot { position: absolute; inset: 0; }
+#dsh-slot { position: absolute; top: 38px; left: 0; right: 0; bottom: 0; }
 #dsh-loading { position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 12px; }
 

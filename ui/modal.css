@@ -1,0 +1,55 @@
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+
+/* 纯卡片弹窗：无阴影无描边（不需要玻璃外框效果） */
+.modal-card {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; justify-content: center;
+  align-items: center;
+  background: #1c2240;
+  border-radius: 12px;
+  color: #dbe4f5;
+  user-select: none;
+  cursor: default;
+}
+.options {
+  display: flex; align-items: center; justify-content: center;
+  gap: 22px; margin-bottom: 26px;
+}
+.radio {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13.5px; color: #cfd8ea; cursor: pointer; white-space: nowrap;
+}
+.radio:hover { color: #fff; }
+.radio input { display: none; }
+.radio .dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 1.5px solid #6a7ba6; box-sizing: border-box;
+  display: inline-block; position: relative; transition: border-color .15s;
+}
+.radio input:checked + .dot { border-color: #2edcc9; }
+.radio input:checked + .dot::after {
+  content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: #2edcc9;
+}
+.row-center { display: flex; justify-content: center; margin-bottom: 18px; }
+.btn-ok {
+  background: #2ed3c4; color: #fff; font-weight: 600; border: none;
+  border-radius: 5px; padding: 9px 46px; font-size: 13.5px; cursor: pointer;
+  letter-spacing: 3px;
+}
+.btn-ok:hover { background: #3bded0; }
+.chk-center {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 12.5px; color: #9fb0d8; cursor: pointer;
+}
+.chk-center input {
+  width: 15px; height: 15px; appearance: none;
+  border: 1.5px solid #6a7ba6; border-radius: 3px;
+  display: inline-block; position: relative; cursor: pointer; box-sizing: border-box;
+}
+.chk-center input:checked { background: #2ed3c4; border-color: #2ed3c4; }
+.chk-center input:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px; border: solid #0a2e2b; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.chk-center span:hover { color: #dbe4f5; }

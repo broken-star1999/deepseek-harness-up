@@ -7,23 +7,19 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- ============ 页面 1：启动器 ============ -->
+  <!-- ============ 页面 1：启动器（顶栏由常驻 controls webview 提供） ============ -->
   <div id="launcher">
-    <header id="topstrip">
-      <span class="brand">⚡ dsh-up Desktop</span>
-      <span class="spacer"></span>
-      <span id="version-badge" class="muted"></span>
-      <span id="update-badge" class="update-badge hidden">⚠ 可更新</span>
-    </header>
-
     <main id="launcher-main">
-      <!-- 检查中… -->
+      <div id="launcher-meta">
+        <span id="version-badge" class="muted"></span>
+        <span id="update-badge" class="update-badge hidden">⚠ 可更新</span>
+      </div>
+
       <div id="checking-view" class="center-view">
         <div class="spinner"></div>
         <p class="muted">正在检查环境…</p>
       </div>
 
-      <!-- 检查完成 → 行动按钮栈（按需显示） -->
       <div id="action-view" class="center-view hidden">
         <button id="btn-node" class="action-btn hidden">
           <span class="icon">⬇</span><span class="t">安装 Node.js</span>
@@ -50,7 +46,7 @@
     </main>
   </div>
 
-  <!-- ============ 页面 2：DSH 全窗口内嵌（零外框） ============ -->
+  <!-- ============ 页面 2：DSH 全窗口内嵌 ============ -->
   <div id="dsh-page" class="hidden">
     <div id="dsh-slot">
       <div id="dsh-loading" class="center-view">

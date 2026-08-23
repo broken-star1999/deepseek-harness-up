@@ -1,36 +1,89 @@
-/* 悬浮控制条 */
 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; }
+
+/* ===== 独立顶栏（拓展式，固定深色，DSH 从下方开始） ===== */
 #bar {
-  position: absolute; top: 0; left: 0; right: 0; height: 36px;
-  display: flex; align-items: center; justify-content: flex-end; gap: 2px;
-  background: rgba(10, 14, 24, 0.55); border-radius: 0 0 0 10px;
-  opacity: 0.75; transition: opacity .2s;
+  position: absolute; top: 0; left: 0; right: 0; height: 38px;
+  display: flex; align-items: center; gap: 4px; padding-right: 8px;
+  background: linear-gradient(180deg, var(--bar-top, #1a2238) 0%, var(--bar-bottom, #141b2c) 100%);
+  border-bottom: 1px solid var(--bar-border, rgba(120, 140, 200, 0.12));
+  z-index: 10;
 }
-#bar:hover { opacity: 1; }
+#logo { width: 18px; height: 18px; border-radius: 4px; margin: 0 8px 0 12px; flex: none; }
+#app-name {
+  font-size: 12.5px; font-weight: 600; letter-spacing: .4px;
+  color: var(--bar-fg, #aebadd); flex: none; opacity: .92;
+  font-family: inherit;
+}
 #drag-zone { flex: 1; height: 100%; cursor: move; }
+
 .ctl {
-  width: 34px; height: 30px; margin: 2px; border: none; border-radius: 6px;
-  background: transparent; color: #dbe4f5; font-size: 14px; cursor: pointer;
+  width: 30px; height: 30px; border: none; border-radius: 8px;
+  background: transparent; color: var(--bar-fg, #aebadd);
+  font-size: 11px; cursor: pointer; display: flex;
+  align-items: center; justify-content: center; line-height: 1;
+  transition: background .12s, color .12s; padding: 0;
 }
-.ctl:hover { background: rgba(255, 255, 255, 0.15); }
+.ctl:hover { background: var(--bar-hover, rgba(255,255,255,0.10)); color: var(--bar-fg, #fff); }
 .ctl.close:hover { background: #e81123; color: #fff; }
 
-/* 弹窗 */
-#modal { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; }
+/* ===== 弹窗 ===== */
+#modal {
+  position: absolute; inset: 0; z-index: 5;
+  background: rgba(8, 12, 24, 0.35);
+  display: flex; align-items: center; justify-content: center;
+}
 #modal.hidden { display: none; }
-.modal-wrap { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
 .modal-card {
-  background: #161d2e; border: 1px solid #26304a; border-radius: 12px;
-  padding: 22px 26px; width: 340px; text-align: center; color: #dbe4f5;
+  background: rgba(28, 34, 60, 0.98);
+  border-radius: 10px;
+  padding: 32px 30px 24px;
+  width: 340px;
+  color: #dbe4f5;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(120, 140, 200, 0.12);
 }
-.modal-card h3 { margin: 0 0 8px; font-size: 16px; }
-.muted { color: #8294b5; font-size: 12px; margin: 0 0 14px; }
-.actions { display: flex; gap: 10px; justify-content: center; margin-bottom: 12px; }
-.btn {
-  background: #1d2740; color: #dbe4f5; border: 1px solid #26304a; border-radius: 8px;
-  padding: 8px 16px; font-size: 13px; cursor: pointer;
+.options {
+  display: flex; align-items: center; justify-content: center;
+  gap: 22px; margin-bottom: 26px;
 }
-.btn:hover { border-color: #4f8cff; }
-.chk { font-size: 12px; color: #8294b5; cursor: pointer; display: block; margin-bottom: 12px; }
-.cancel { font-size: 12px; color: #8294b5; cursor: pointer; }
-.cancel:hover { color: #dbe4f5; }
+.radio {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13.5px; color: #cfd8ea; cursor: pointer; white-space: nowrap;
+}
+.radio:hover { color: #fff; }
+.radio input { display: none; }
+.radio .dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 1.5px solid #6a7ba6; box-sizing: border-box;
+  display: inline-block; position: relative;
+  transition: border-color .15s;
+}
+.radio input:checked + .dot { border-color: #2edcc9; }
+.radio input:checked + .dot::after {
+  content: ""; position: absolute; inset: 2.5px;
+  border-radius: 50%; background: #2edcc9;
+}
+.row-center { display: flex; justify-content: center; margin-bottom: 18px; }
+.btn-ok {
+  background: #2ed3c4;
+  color: #fff; font-weight: 600; border: none;
+  border-radius: 5px; padding: 9px 46px; font-size: 13.5px; cursor: pointer;
+  letter-spacing: 3px;
+}
+.btn-ok:hover { background: #3bded0; }
+.chk-center {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 12.5px; color: #9fb0d8; cursor: pointer; user-select: none;
+}
+.chk-center input {
+  width: 15px; height: 15px; appearance: none;
+  border: 1.5px solid #6a7ba6; border-radius: 3px;
+  display: inline-block; position: relative; cursor: pointer; box-sizing: border-box;
+}
+.chk-center input:checked { background: #2ed3c4; border-color: #2ed3c4; }
+.chk-center input:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px; border: solid #0a2e2b; border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.chk-center span:hover { color: #dbe4f5; }

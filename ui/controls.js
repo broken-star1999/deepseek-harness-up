@@ -1,73 +1,63 @@
-// 悬浮控制条逻辑
 const invoke = window.__TAURI__.core.invoke;
 
 const CTL = {
-  defaultAction: null, // 'exit' | 'minimize'
+  defaultAction: null,
 
   async init() {
     try { this.defaultAction = (await invoke('get_close_default')) || null; } catch (e) { this.defaultAction = null; }
+    this.applyTheme();
 
     document.getElementById('btn-min').onclick = () => invoke('win_minimize');
     document.getElementById('btn-max').onclick = () => invoke('win_toggle_maximize');
     document.getElementById('btn-close').onclick = () => this.requestClose();
 
-    // 顶部拖拽区（无边框窗口拖动）
     const dz = document.getElementById('drag-zone');
-    dz.addEventListener('mousedown', (ev) => {
-      if (ev.button !== 0) return;
-      invoke('start_drag');
-    });
+    dz.addEventListener('mousedown', (ev) => { if (ev.button === 0) invoke('start_drag'); });
 
-    // 弹窗按钮
-    document.getElementById('modal-exit').onclick = () => this.choose('exit');
-    document.getElementById('modal-min').onclick = () => this.choose('minimize');
-    document.getElementById('modal-cancel').onclick = () => this.cancel();
-
-    // Esc 返回页面 1
     window.addEventListener('keydown', (ev) => {
       if (ev.key === 'Escape') {
-        if (!document.getElementById('modal').classList.contains('hidden')) this.cancel();
-        else if (this.defaultAction) this.doDefault();
+        if (this.defaultAction) this.doDefault();
         else invoke('back_to_launcher');
       }
     });
+  },
 
-    // 弹窗显示时占满全屏（这样弹窗可居中显示在 DSH 之上）
-    this._modalShown = false;
+  async applyTheme() {
+    try {
+      const hex = await invoke('get_dsh_theme');
+      if (!hex || !/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      const dark = lum < 0.5;
+      document.getElementById('bar').style.setProperty('--bar-top', hex);
+      document.getElementById('bar').style.setProperty('--bar-bottom', this.shade(hex, dark ? -18 : 10));
+      document.getElementById('bar').style.setProperty('--bar-fg', dark ? '#dbe4f5' : '#1c2434');
+      document.getElementById('bar').style.setProperty('--bar-hover', dark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)');
+      document.getElementById('bar').style.setProperty('--bar-border', dark ? 'rgba(120,140,200,0.12)' : 'rgba(0,0,0,0.15)');
+    } catch (e) { }
+  },
+
+  shade(hex, amt) {
+    const n = (c) => Math.max(0, Math.min(255, c + amt));
+    const r = n(parseInt(hex.slice(1, 3), 16));
+    const g = n(parseInt(hex.slice(3, 5), 16));
+    const b = n(parseInt(hex.slice(5, 7), 16));
+    return '#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('');
   },
 
   async requestClose() {
+    // 刷新一次记忆设置（弹窗中勾选过的"不再提醒"立即生效）
+    try { this.defaultAction = (await invoke('get_close_default')) || null; } catch (e) { this.defaultAction = null; }
     if (this.defaultAction) { this.doDefault(); return; }
-    // 弹窗 → 请求主 UI 扩展本 webview 到全屏
-    this._modalShown = true;
-    try { await invoke('show_modal_overlay'); } catch (e) {}
-    document.getElementById('modal').classList.remove('hidden');
-  },
-
-  async choose(action) {
-    const asDefault = document.getElementById('modal-default').checked;
-    if (asDefault) { try { await invoke('set_close_default', { value: action }); } catch (e) {} }
-    await this.closeModal();
-    if (action === 'exit') await invoke('win_close');
-    else await invoke('win_minimize');
+    try { await invoke('show_dialog_window'); } catch (e) {}
   },
 
   doDefault() {
     if (this.defaultAction === 'exit') invoke('win_close');
     else if (this.defaultAction === 'minimize') invoke('win_minimize');
     else invoke('back_to_launcher');
-  },
-
-  async cancel() {
-    await this.closeModal();
-  },
-
-  async closeModal() {
-    if (this._modalShown) {
-      try { await invoke('hide_modal_overlay'); } catch (e) {}
-      this._modalShown = false;
-    }
-    document.getElementById('modal').classList.add('hidden');
   },
 };
 

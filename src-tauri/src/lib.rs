@@ -6,13 +6,12 @@ mod updater;
 
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::{Emitter, LogicalPosition, LogicalSize, Rect, State, Window};
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Window};
 
 pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
     pub embed: Mutex<Option<tauri::webview::Webview>>,
     pub controls: Mutex<Option<tauri::webview::Webview>>,
-    pub modal_back: Mutex<Option<tauri::Rect>>,
 }
 
 impl Default for AppState {
@@ -21,7 +20,6 @@ impl Default for AppState {
             dsh: Mutex::new(dsh_process::DshState::default()),
             embed: Mutex::new(None),
             controls: Mutex::new(None),
-            modal_back: Mutex::new(None),
         }
     }
 }
@@ -242,6 +240,68 @@ async fn update_embed_bounds(
 }
 
 /// 快速读取一个命令的版本输出（node --version / npm --version）
+/// 从 DSH 页面 HTML 提取主题背景色（顶栏自动适配用）
+#[tauri::command]
+async fn get_dsh_theme() -> Option<String> {
+    if !dsh_process::port_open() {
+        return None;
+    }
+    let resp = ureq::get("http://127.0.0.1:3080/")
+        .timeout(std::time::Duration::from_secs(2))
+        .call()
+        .ok()?;
+    let html = resp.into_string().ok()?;
+    extract_bg_hex(&html)
+}
+
+fn is_hex6(seg: &str) -> bool {
+    seg.len() >= 7
+        && seg.as_bytes()[0] == b'#'
+        && seg[1..].chars().all(|c| c.is_ascii_hexdigit())
+}
+
+fn extract_bg_hex(html: &str) -> Option<String> {
+    let lower = html.to_lowercase();
+    let mut candidates: Vec<String> = Vec::new();
+    let mut i = 0;
+    // 扫描所有 background 声明（含 background-color / background-image 等）
+    while let Some(pos) = lower[i..].find("background") {
+        let start = i + pos;
+        let look_end = (start + 140).min(lower.len());
+        let look = &lower[start..look_end];
+        // 该段内取第一个 #rrggbb 或 rgb() —— body 级别声明通常最先生效
+        if let Some(hpos) = look.find('#') {
+            let seg = &look[hpos..(hpos + 7).min(look.len())];
+            if is_hex6(seg) {
+                candidates.push(seg.to_string());
+            }
+        } else if let Some(rpos) = look.find("rgb(") {
+            let seg = &look[rpos..(rpos + 32).min(look.len())];
+            let nums: Vec<u32> = seg[4..]
+                .split(|c: char| !c.is_ascii_digit())
+                .filter(|s| !s.is_empty())
+                .take(3)
+                .filter_map(|s| s.parse().ok())
+                .collect();
+            if nums.len() == 3 {
+                candidates.push(format!(
+                    "#{:02x}{:02x}{:02x}",
+                    nums[0].min(255),
+                    nums[1].min(255),
+                    nums[2].min(255)
+                ));
+            }
+        }
+        i = start + 10;
+    }
+    use std::collections::HashMap;
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for c in &candidates {
+        *counts.entry(c.clone()).or_insert(0) += 1;
+    }
+    counts.into_iter().max_by_key(|(_, n)| *n).map(|(c, _)| c)
+}
+
 fn cmd_version(cmd: &str) -> Option<String> {
     let out = std::process::Command::new(cmd).arg("--version").output().ok()?;
     if !out.status.success() {
@@ -276,7 +336,8 @@ async fn show_controls(
     let builder = tauri::webview::WebviewBuilder::new(
         CONTROLS_LABEL,
         tauri::WebviewUrl::App("controls.html".into()),
-    );
+    )
+    .transparent(true);
     let wv = window
         .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
         .map_err(|e| format!("创建控制条失败: {}", e))?;
@@ -312,34 +373,6 @@ async fn update_controls_bounds(
     Ok(())
 }
 
-/// 弹窗时把控制条 webview 扩展为全窗口（弹窗可居中浮于 DSH 之上）
-#[tauri::command]
-async fn show_modal_overlay(window: Window, state: State<'_, AppState>) -> Result<(), String> {
-    let guard = state.controls.lock().unwrap();
-    if let Some(wv) = guard.as_ref() {
-        let prev = wv.bounds().map_err(|e| e.to_string())?;
-        *state.modal_back.lock().unwrap() = Some(prev);
-        let size = window.inner_size().map_err(|e| e.to_string())?;
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let rect = Rect {
-            position: LogicalPosition::new(0.0, 0.0).into(),
-            size: LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale).into(),
-        };
-        wv.set_bounds(rect).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-async fn hide_modal_overlay(state: State<'_, AppState>) -> Result<(), String> {
-    let prev = state.modal_back.lock().unwrap().take();
-    let guard = state.controls.lock().unwrap();
-    if let (Some(wv), Some(rect)) = (guard.as_ref(), prev) {
-        wv.set_bounds(rect).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
 /// 回到页面 1：关闭两个子 webview，并通知主 webview 刷新状态
 #[tauri::command]
 async fn back_to_launcher(
@@ -352,35 +385,107 @@ async fn back_to_launcher(
             let _ = wv.close();
         }
     }
-    {
-        let mut g = state.controls.lock().unwrap();
-        if let Some(wv) = g.take() {
-            let _ = wv.close();
+    // 顶栏（controls）常驻，不关闭；仅恢复启动器主体
+    let embed_was = state.embed.lock().unwrap().is_some();
+    if embed_was {
+        let _ = window.emit("back-to-launcher", ());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn win_minimize(app: tauri::AppHandle) -> Result<(), String> {
+    app.get_webview_window("main")
+        .ok_or("主窗口不存在")?
+        .minimize()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn win_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
+    let win = app.get_webview_window("main").ok_or("主窗口不存在")?;
+    if win.is_maximized().unwrap_or(false) {
+        win.unmaximize().map_err(|e| e.to_string())
+    } else {
+        win.maximize().map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn win_close(app: tauri::AppHandle) -> Result<(), String> {
+    log_line("win_close: app.exit(0)");
+    app.exit(0);
+    Ok(())
+}
+
+/// ===== 独立悬浮弹窗窗口（始终置顶，不依赖 child webview 层叠）=====
+
+#[tauri::command]
+async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("confirm-dialog") {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    // 构建后直接以物理坐标精确居中于主窗口（零换算误差）
+    let win = tauri::WebviewWindowBuilder::new(
+        &app,
+        "confirm-dialog",
+        tauri::WebviewUrl::App("modal.html".into()),
+    )
+    .decorations(false)
+    .transparent(true)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .resizable(false)
+    .inner_size(380.0, 280.0)
+    .build()
+    .map_err(|e| format!("创建弹窗窗口失败: {}", e))?;
+
+    // 内置居中（tauri 处理坐标换算，避开手工换算的 DPI 坑）
+    let _ = win.center();
+    Ok(())
+}
+
+/// 弹窗确认（单 IPC：存记忆 → 关弹窗 → 执行动作）。
+/// 关键：不能在 JS 侧先关弹窗窗口再发第二个命令（webview 销毁后 invoke 无法发出）
+#[tauri::command]
+async fn dialog_confirm(
+    app: tauri::AppHandle,
+    mode: String,
+    no_remind: bool,
+) -> Result<(), String> {
+    log_line(&format!("dialog_confirm: mode={} no_remind={}", mode, no_remind));
+    if no_remind && (mode == "exit" || mode == "minimize") {
+        let mut s = settings_snapshot();
+        s["close_default"] = serde_json::json!(mode);
+        let dir = settings_path().parent().unwrap().to_path_buf();
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+        log_line(&format!("dialog_confirm: saved default={}", mode));
+    }
+    if let Some(w) = app.get_webview_window("confirm-dialog") {
+        let _ = w.close();
+    }
+    if mode == "exit" {
+        log_line("dialog_confirm: app.exit(0)");
+        app.exit(0);
+    } else if let Some(main) = app.get_webview_window("main") {
+        match main.minimize() {
+            Ok(()) => log_line("dialog_confirm: minimized ok"),
+            Err(e) => log_line(&format!("dialog_confirm: minimize err={}", e)),
         }
     }
-    let _ = window.emit("back-to-launcher", ());
     Ok(())
 }
 
 #[tauri::command]
-fn win_minimize(window: Window) -> Result<(), String> {
-    window.minimize().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-fn win_toggle_maximize(window: Window) -> Result<(), String> {
-    if window.is_maximized().unwrap_or(false) {
-        window.unmaximize().map_err(|e| e.to_string())
-    } else {
-        window.maximize().map_err(|e| e.to_string())
+async fn hide_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(w) = app.get_webview_window("confirm-dialog") {
+        let _ = w.close();
     }
-}
-
-#[tauri::command]
-fn win_close(window: Window) -> Result<(), String> {
-    let _ = window.close();
     Ok(())
 }
+
 
 #[tauri::command]
 fn start_drag(window: Window) -> Result<(), String> {
@@ -392,6 +497,23 @@ fn start_drag(window: Window) -> Result<(), String> {
 fn settings_path() -> std::path::PathBuf {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
+}
+
+/// 调试日志（%LOCALAPPDATA%\dsh-up\log.txt）
+fn log_line(msg: &str) {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let p = std::path::PathBuf::from(la).join("dsh-up").join("log.txt");
+    if let Some(d) = p.parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+        let _ = writeln!(f, "[{}] {}", ts, msg);
+    }
 }
 
 fn settings_snapshot() -> serde_json::Value {
@@ -460,15 +582,17 @@ pub fn run() {
             show_controls,
             hide_controls,
             update_controls_bounds,
-            show_modal_overlay,
-            hide_modal_overlay,
+            show_dialog_window,
+            hide_dialog_window,
+            dialog_confirm,
             back_to_launcher,
             win_minimize,
             win_toggle_maximize,
             win_close,
             start_drag,
             get_close_default,
-            set_close_default
+            set_close_default,
+            get_dsh_theme
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

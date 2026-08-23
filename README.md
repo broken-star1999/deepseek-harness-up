@@ -42,7 +42,7 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 
 | 启动器 | DSH 界面 |
 |---|---|
-| ![启动器](screenshots/launcher.png) | ![DSH 界面](screenshots/dsh.png) |
+| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) |
 
 > 当前为占位图：运行工具后按 Win+Shift+S 截图，覆盖 `screenshots/` 下同名文件即可
 

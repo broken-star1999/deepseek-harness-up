@@ -1,3 +1,14 @@
+// 全局错误 → 运行日志
+window.addEventListener("error", (ev) => {
+  try { invoke("fe_log", { msg: "ERROR " + (ev.message || "") + " @ " + (ev.filename || "") + ":" + (ev.lineno || "") }); } catch (e) {}
+});
+window.addEventListener("unhandledrejection", (ev) => {
+  try { invoke("fe_log", { msg: "REJECTION " + (ev.reason && ev.reason.message ? ev.reason.message : String(ev.reason || "")) }); } catch (e) {}
+});
+window.addEventListener("DOMContentLoaded", () => {
+  try { invoke("fe_log", { msg: "PAGE LOADED " + location.pathname.split("/").pop() }); } catch (e) {}
+});
+
 // dsh-up Desktop 前端（两页制：启动器 / DSH 全窗口）
 const invoke = window.__TAURI__.core.invoke;
 
@@ -11,6 +22,7 @@ const UI = {
   async init() {
     // 统一顶栏：启动即显示（logo/名称/拖拽/─□✕）
     try { await invoke('show_controls', this.ctrlRect()); } catch (e) {}
+    try { invoke('fe_log', { msg: 'UI init: launcher ready' }); } catch (e) {}
     // Esc 返回页面 1 后的事件
     try {
       window.__TAURI__.event.listen('back-to-launcher', async () => {
@@ -201,6 +213,7 @@ const UI = {
 
   // 启动 dsh 核心（后台 dsh web --no-open）
   async launch() {
+    try { await invoke('fe_log', { msg: 'ACTION UI: start core clicked' }); } catch (e) {}
     if (this.busy) return;
     if (this.ctx && this.ctx.running) return; // 已运行则忽略
     this.busy = true;
@@ -208,6 +221,7 @@ const UI = {
     this.ctx.booting = true;
     this.applyButtonStates(this.ctx);
     try {
+      try { await invoke('fe_log', { msg: 'UI: invoking start_dsh' }); } catch (e) {}
       await invoke('start_dsh');
     } catch (e) {
       this.ctx.booting = false;
@@ -226,6 +240,7 @@ const UI = {
 
   // 打开 dsh 界面（核心已运行才可点）
   async openDsh() {
+    try { await invoke('fe_log', { msg: 'ACTION UI: open dsh clicked' }); } catch (e) {}
     if (this.busy) return;
     if (!(this.ctx && this.ctx.running)) {
       return;

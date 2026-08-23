@@ -21,4 +21,4 @@ semver = "1"
 
 [profile.release]
 strip = true
-lto = true
+lto = "thin"

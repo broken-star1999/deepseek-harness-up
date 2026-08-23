@@ -22,24 +22,6 @@ const UI = {
   async init() {
     // 应用壁纸（自定义 or 默认）
     try { await this.applyBg(); } catch (e) {}
-    // 壁纸文件选择
-    const bgFile = document.getElementById('bg-file');
-    if (bgFile) {
-      bgFile.onchange = (ev) => {
-        const f = ev.target.files && ev.target.files[0];
-        if (!f) return;
-        const reader = new FileReader();
-        reader.onload = async () => {
-          try {
-            const arr = new Uint8Array(reader.result);
-            const path = await invoke('set_bg_bytes', { data: Array.from(arr) });
-            document.getElementById('bg-status').textContent = '已选择：' + f.name;
-            this.applyBg();
-          } catch (e) { this.toast('壁纸设置失败', 'warn'); }
-        };
-        reader.readAsArrayBuffer(f);
-      };
-    }
     // 统一顶栏：启动即显示（logo/名称/拖拽/─□✕）
     try { await invoke('show_controls', this.ctrlRect()); } catch (e) {}
     try { invoke('fe_log', { msg: 'UI init: launcher ready' }); } catch (e) {}
@@ -104,6 +86,9 @@ const UI = {
   },
 
   renderActions() {
+    // 设置按钮：始终显示
+    const setBtn = document.getElementById('btn-settings');
+    if (setBtn) setBtn.classList.remove('hidden');
     const c = this.ctx;
     const hasNode = !!c.nodeVersion;
     const hasDsh = c.installed;
@@ -373,6 +358,78 @@ const UI = {
 
   /* ========== 卸载弹窗 ========== */
 
+  async resetBg() {
+    try {
+      await invoke('reset_bg');
+      document.getElementById('bg-status').textContent = '默认壁纸';
+      await this.applyBg();
+      this.toast('已恢复默认壁纸', 'ok');
+    } catch (e) { this.toast('恢复失败', 'warn'); }
+  },
+
+  switchTab(name) {
+    document.querySelectorAll('#modal-settings .tab').forEach((t) => {
+      t.classList.toggle('active', t.dataset.tab === name);
+    });
+    document.querySelectorAll('#modal-settings .tab-page').forEach((p) => {
+      p.classList.toggle('active', p.id === 'tab-' + name);
+    });
+  },
+
+  async checkDshUpdate() {
+    const log = document.getElementById('upd-dsh-log');
+    const info = document.getElementById('upd-dsh-info');
+    log.textContent = '检查中…';
+    try {
+      const u = await invoke('check_update');
+      info.textContent = '当前 ' + u.local + (u.outdated ? ' → 最新 ' + u.latest : '（已最新）');
+      if (u.outdated) {
+        log.innerHTML = '发现新版本！<button class="btn small primary" onclick="UI.doUpdate()">立即更新</button>';
+      } else {
+        log.textContent = '✅ 已是最新版本';
+      }
+    } catch (e) {
+      info.textContent = '离线/无法检查';
+      log.textContent = '';
+    }
+  },
+
+  async checkAppUpdate() {
+    const info = document.getElementById('upd-app-info');
+    try {
+      const u = await invoke('check_app_update');
+      if (!u.configured) {
+        info.textContent = '当前 v' + u.current + '（未配置更新源）';
+        return;
+      }
+      info.textContent = '当前 v' + u.current + (u.outdated ? ' → 最新 v' + u.latest : '（已最新）');
+    } catch (e) {
+      info.textContent = '离线/无法检查';
+    }
+  },
+
+  async openLogs() {
+    try { await invoke('open_logs'); } catch (e) {}
+  },
+
+  async pickBg() {
+    const btn = document.getElementById('btn-pick-bg');
+    if (btn) { btn.disabled = true; btn.textContent = '选择中…'; }
+    try {
+      const path = await invoke('pick_and_set_bg');
+      if (path === 'cancelled') {
+        // 用户取消，无提示
+      } else if (path) {
+        document.getElementById('bg-status').textContent = '自定义壁纸';
+        await this.applyBg();
+        this.toast('壁纸已更新', 'ok');
+      }
+    } catch (e) {
+      this.toast('选择壁纸失败', 'warn');
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '选择图片…'; }
+  },
+
   openSettings() {
     // 回填当前 ✕ 行为
     invoke('get_close_default').then((v) => {
@@ -381,6 +438,25 @@ const UI = {
         r.checked = r.value === val;
       });
     }).catch(() => {});
+    // 回填镜像
+    invoke('get_mirror').then((m) => {
+      document.querySelectorAll('#modal-settings input[name="mirror"]').forEach((r) => {
+        if (m && m.startsWith('custom:')) {
+          r.checked = r.value === 'custom';
+          document.getElementById('mirror-custom').value = m.slice(7);
+        } else {
+          r.checked = r.value === (m || 'npmmirror');
+        }
+      });
+    }).catch(() => {});
+    // 关于页信息
+    (async () => {
+      try {
+        const s = await invoke('get_status');
+        document.getElementById('about-info').textContent =
+          'dsh-up Desktop v' + s.appVersion + ' · Tauri 2 · dsh ' + (s.dshVersion || '未安装');
+      } catch (e) {}
+    })();
     document.getElementById('modal-settings').classList.remove('hidden');
   },
 
@@ -392,8 +468,19 @@ const UI = {
     const mode = document.querySelector('#modal-settings input[name="close-mode"]:checked');
     if (mode) {
       try { await invoke('set_close_default', { value: mode.value }); } catch (e) {}
-      this.toast('✕ 默认行为已保存', 'ok');
     }
+    const mirror = document.querySelector('#modal-settings input[name="mirror"]:checked');
+    if (mirror) {
+      let val = mirror.value;
+      if (val === 'custom') {
+        const url = document.getElementById('mirror-custom').value.trim();
+        if (url) val = 'custom:' + url;
+      }
+      if (val) {
+        try { await invoke('set_mirror', { mirror: val }); } catch (e) {}
+      }
+    }
+    this.toast('设置已保存', 'ok');
     this.closeSettings();
   },
 

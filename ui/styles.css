@@ -112,10 +112,15 @@ body {
   align-items: center; justify-content: center; gap: 12px; }
 
 /* ===== 弹窗 ===== */
-#modal {
+#modal,
+#modal-settings,
+#modal-update {
   position: fixed; inset: 0; background: rgba(0,0,0,.5);
   display: flex; align-items: center; justify-content: center; z-index: 100;
 }
+#modal.hidden,
+#modal-settings.hidden,
+#modal-update.hidden { display: none; }
 .modal-card {
   background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
   padding: 20px 24px; width: 380px;
@@ -132,6 +137,23 @@ body {
 .btn:hover { border-color: var(--accent); }
 .btn.danger { background: rgba(239,91,91,.12); border-color: rgba(239,91,91,.5); color: var(--red); }
 #modal-log { margin-top: 10px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
+.modal-card.wide { width: 460px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+.tab {
+  background: transparent; border: none; color: var(--muted); padding: 8px 14px;
+  font-size: 13px; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab-page { display: none; }
+.tab-page.active { display: block; }
+.tab-page h3 { font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+.btn.small { padding: 5px 12px; font-size: 12px; }
+.txt {
+  background: var(--panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; font-size: 12.5px; width: 200px; font-family: inherit;
+}
+.txt:focus { border-color: var(--accent); outline: none; }
 
 /* ===== 拖拽提示 ===== */
 #topstrip .drag-hint { font-size: 11px; color: var(--muted); opacity: .5; margin-left: 8px; }

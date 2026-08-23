@@ -7,77 +7,72 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header id="topbar">
-    <span class="brand">⚡ dsh-up</span>
-    <span id="dsh-status" class="status status-idle">检测中…</span>
-    <span id="version-badge"></span>
-    <span id="update-badge" class="update-badge hidden">可更新</span>
-  </header>
+  <!-- ============ 页面 1：启动器 ============ -->
+  <div id="launcher">
+    <header id="topstrip">
+      <span class="brand">⚡ dsh-up Desktop</span>
+      <span class="spacer"></span>
+      <span id="version-badge" class="muted"></span>
+      <span id="update-badge" class="update-badge hidden">⚠ 可更新</span>
+    </header>
 
-  <div id="layout">
-    <aside id="sidebar">
-      <button class="nav active" data-page="console">🖥 控制台</button>
-      <button class="nav" data-page="update">⬆ 更新</button>
-      <button class="nav" data-page="checks">🩺 体检</button>
-      <button class="nav" data-page="uninstall">🗑 卸载</button>
-      <button class="nav" data-page="about">ⓘ 关于</button>
-    </aside>
+    <main id="launcher-main">
+      <!-- 检查中… -->
+      <div id="checking-view" class="center-view">
+        <div class="spinner"></div>
+        <p class="muted">正在检查环境…</p>
+      </div>
 
-    <main id="content">
-      <!-- 控制台页：工具条 + 内嵌 DSH -->
-      <section class="page active page-console" id="page-console">
-        <div id="console-toolbar">
-          <span id="console-state" class="muted">–</span>
-          <div class="btn-group">
-            <button id="btn-start" class="btn primary" onclick="UI.startDsh()">▶ 启动 dsh</button>
-            <button id="btn-stop" class="btn danger" onclick="UI.stopDsh()">⏹ 停止</button>
-            <button id="btn-refresh" class="btn" onclick="UI.refresh()">⟳ 刷新</button>
-          </div>
-        </div>
-        <div id="embed-slot">
-          <div id="embed-status">
-            <div class="spinner"></div>
-            <p class="muted">正在连接 127.0.0.1:3080 …</p>
-            <p class="muted small" id="embed-error"></p>
-            <button id="embed-retry" class="btn" onclick="UI.refreshEmbed()">重试</button>
-          </div>
-        </div>
-      </section>
+      <!-- 检查完成 → 行动按钮栈（按需显示） -->
+      <div id="action-view" class="center-view hidden">
+        <button id="btn-node" class="action-btn hidden">
+          <span class="icon">⬇</span><span class="t">安装 Node.js</span>
+          <span class="sub">DSH 运行所需环境</span>
+        </button>
 
-      <section class="page" id="page-update">
-        <div class="card">
-          <h2>版本更新</h2>
-          <div id="update-box" class="muted">检查中…</div>
-          <div id="update-log" class="log"></div>
-        </div>
-      </section>
+        <button id="btn-dsh" class="action-btn hidden">
+          <span class="icon">⬇</span><span class="t">安装 DeepSeek Harness</span>
+          <span class="sub">npm 全局安装 @deepseek-ai/dsh</span>
+        </button>
 
-      <section class="page" id="page-checks">
-        <div class="card">
-          <h2>环境体检</h2>
-          <div id="checks-box" class="muted">检查中…</div>
-        </div>
-      </section>
+        <button id="btn-launch" class="action-btn primary hidden">
+          <span class="icon">🚀</span><span class="t">启动 DSH</span>
+          <span class="sub" id="launch-sub">进入 127.0.0.1:3080 界面</span>
+        </button>
 
-      <section class="page" id="page-uninstall">
-        <div class="card">
-          <h2>卸载 dsh</h2>
-          <p class="muted" id="uninstall-desc">…</p>
-          <label class="chk"><input type="checkbox" id="chk-config" /> 同时清除用户配置（~/.dsh：profiles、会话记录）</label>
-          <label class="chk"><input type="checkbox" id="chk-npx" /> 同时清理 npx 残留缓存（%LocalAppData%/npm-cache/_npx）</label>
-          <button id="btn-uninstall" class="btn danger" onclick="UI.uninstall()">确认卸载</button>
-          <div id="uninstall-log" class="log"></div>
+        <div id="busy-view" class="hidden">
+          <div class="spinner"></div>
+          <p class="muted" id="busy-text">处理中…</p>
         </div>
-      </section>
 
-      <section class="page" id="page-about">
-        <div class="card">
-          <h2>关于 dsh-up Desktop</h2>
-          <p class="muted">独立外部工具（非插件）：DSH 启动器 + 内嵌显示器 + 版本/卸载管理器。</p>
-          <p class="muted" id="about-version"></p>
-        </div>
-      </section>
+        <a id="btn-uninstall" class="link-btn">卸载 DeepSeek Harness…</a>
+      </div>
     </main>
+  </div>
+
+  <!-- ============ 页面 2：DSH 全窗口内嵌（零外框） ============ -->
+  <div id="dsh-page" class="hidden">
+    <div id="dsh-slot">
+      <div id="dsh-loading" class="center-view">
+        <div class="spinner"></div>
+        <p class="muted">正在启动 DSH…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 卸载确认弹窗 -->
+  <div id="modal" class="hidden">
+    <div class="modal-card">
+      <h3>卸载 DeepSeek Harness</h3>
+      <p class="muted">将移除全局安装的 @deepseek-ai/dsh。不勾选时用户配置完整保留。</p>
+      <label class="chk"><input type="checkbox" id="chk-config" /> 同时清除用户配置（~/.dsh：profiles、会话记录）</label>
+      <label class="chk"><input type="checkbox" id="chk-npx" /> 同时清理 npx 残留缓存</label>
+      <div class="modal-actions">
+        <button class="btn" onclick="UI.closeModal()">取消</button>
+        <button class="btn danger" onclick="UI.doUninstall()">确认卸载</button>
+      </div>
+      <div id="modal-log" class="log"></div>
+    </div>
   </div>
 
   <script src="main.js"></script>

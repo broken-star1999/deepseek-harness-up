@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>controls</title>
+  <link rel="stylesheet" href="controls.css" />
+</head>
+<body>
+  <!-- 右上角悬浮条（默认可见） -->
+  <div id="bar">
+    <div id="drag-zone" title="拖动窗口"></div>
+    <button id="btn-min" class="ctl" title="最小化">&#x2014;</button>
+    <button id="btn-max" class="ctl" title="最大化/还原">&#x25A1;</button>
+    <button id="btn-close" class="ctl close" title="关闭">&#x2715;</button>
+  </div>
+
+  <!-- 退出确认弹窗（占满全屏时的遮罩+弹窗） -->
+  <div id="modal" class="hidden">
+    <div class="modal-wrap">
+      <div class="modal-card">
+        <h3>退出 dsh-up？</h3>
+        <p class="muted">dsh 服务会继续在后台运行，随时可回到 127.0.0.1:3080</p>
+        <div class="actions">
+          <button id="modal-exit" class="btn">直接退出</button>
+          <button id="modal-min" class="btn">最小化到任务栏</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="modal-default" /> 设为默认</label>
+        <div class="cancel" id="modal-cancel">取消（Esc 返回 DSH）</div>
+      </div>
+    </div>
+  </div>
+  <script src="controls.js"></script>
+</body>
+</html>

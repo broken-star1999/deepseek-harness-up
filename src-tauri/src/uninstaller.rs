@@ -23,8 +23,7 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
     let mut log = String::new();
 
     // 1. 卸载全局包（npm 自动清理 shim）
-    let out = Command::new("cmd")
-        .args(["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
+    let out = crate::winutil::cmd_hidden(&["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {

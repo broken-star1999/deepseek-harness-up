@@ -3,6 +3,7 @@ mod dsh_process;
 mod env_check;
 mod uninstaller;
 mod updater;
+mod winutil;
 
 use serde::Serialize;
 use std::sync::Mutex;
@@ -590,9 +591,7 @@ fn set_close_default(value: String) -> Result<(), String> {
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        std::process::Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .spawn()
+        crate::winutil::cmd_hidden(&["/C", "start", "", url]).spawn()
             .map_err(|e| format!("打开链接失败: {}", e))?;
         return Ok(());
     }

@@ -57,6 +57,8 @@ const UI = {
     }
     this.ctx = ctx;
     this.renderActions();
+    // 后台异步检查更新（不阻塞界面）
+    try { await this.checkUpdate(); } catch (e) {}
   },
 
   showChecking() {
@@ -100,6 +102,57 @@ const UI = {
     } finally {
       this.busy = false;
       await this.checkEnv();
+    }
+  },
+
+  /* ========== 更新 ========== */
+
+  async checkUpdate() {
+    try {
+      const u = await invoke('check_update');
+      const badge = document.getElementById('update-badge');
+      if (u && u.outdated) {
+        badge.textContent = '⚠ 可更新 → ' + u.latest;
+        badge.classList.remove('hidden');
+        badge.onclick = () => this.openUpdateModal(u);
+      } else {
+        badge.classList.add('hidden');
+      }
+    } catch (e) {
+      // 离线/未装 dsh：静默
+      document.getElementById('update-badge').classList.add('hidden');
+    }
+  },
+
+  openUpdateModal(u) {
+    document.getElementById('update-info').textContent =
+      '当前版本 ' + u.local + ' → 最新版本 ' + u.latest;
+    document.getElementById('update-log').textContent = '';
+    document.getElementById('btn-do-update').disabled = false;
+    document.getElementById('btn-do-update').textContent = '立即更新';
+    document.getElementById('modal-update').classList.remove('hidden');
+  },
+
+  closeUpdateModal() {
+    document.getElementById('modal-update').classList.add('hidden');
+  },
+
+  async doUpdate() {
+    const btn = document.getElementById('btn-do-update');
+    const log = document.getElementById('update-log');
+    btn.disabled = true;
+    btn.textContent = '更新中…';
+    log.textContent = 'npm install -g @deepseek-ai/dsh@latest …';
+    try {
+      const r = await invoke('update_dsh');
+      log.innerHTML = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
+      btn.textContent = '完成';
+      this.closeUpdateModal();
+      await this.checkEnv();
+    } catch (e) {
+      log.innerHTML = '<span class="muted" style="color:var(--red)">失败: ' + e + '</span>';
+      btn.disabled = false;
+      btn.textContent = '重试';
     }
   },
 

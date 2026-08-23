@@ -1,8 +1,8 @@
 // dsh 可执行文件定位：node / npm 全局 root / dsh 包目录（绝对路径探测，不依赖 PATH shim）
 use std::path::PathBuf;
-use std::process::Command;
 
 #[derive(Clone)]
+#[allow(dead_code)] // 字段为诊断/调试保留
 pub struct DshLocator {
     pub node: Option<String>,
     pub bin_js: Option<PathBuf>,

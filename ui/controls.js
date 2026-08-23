@@ -18,6 +18,7 @@ const CTL = {
     try { this.defaultAction = (await invoke('get_close_default')) || null; } catch (e) { this.defaultAction = null; }
     this.applyTheme();
 
+    document.getElementById('btn-settings').onclick = () => invoke('open_settings_panel');
     document.getElementById('btn-min').onclick = () => invoke('win_minimize');
     document.getElementById('btn-max').onclick = () => invoke('win_toggle_maximize');
     document.getElementById('btn-close').onclick = () => this.requestClose();

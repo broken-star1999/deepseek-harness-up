@@ -1,6 +1,5 @@
 // 卸载：全局包 + 可选清除用户配置(~/.dsh) 与 npx 缓存
 use std::path::PathBuf;
-use std::process::Command;
 
 /// dsh 配置根：$DSH_HOME 优先，否则 ~/.dsh
 pub fn dsh_home() -> PathBuf {
@@ -23,7 +22,30 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
     let mut log = String::new();
 
     // 1. 卸载全局包（npm 自动清理 shim）
-    let out = crate::winutil::cmd_hidden(&["/C", "npm", "uninstall", "-g", "@deepseek-ai/dsh"])
+    let mirror_arg = {
+        let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let p = std::path::PathBuf::from(la).join("dsh-up").join("settings.json");
+        std::fs::read_to_string(p)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("mirror").and_then(|x| x.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| "npmmirror".to_string())
+    };
+    let registry_arg = match mirror_arg.as_str() {
+        "npmjs" => "--registry=https://registry.npmjs.org".to_string(),
+        m if m.starts_with("custom:") => {
+            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
+        }
+        _ => "--registry=https://registry.npmmirror.com".to_string(),
+    };
+    let out = crate::winutil::cmd_hidden(&[
+        "/C",
+        "npm",
+        "uninstall",
+        "-g",
+        "@deepseek-ai/dsh",
+        &registry_arg,
+    ])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {

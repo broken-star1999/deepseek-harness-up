@@ -1,8 +1,0 @@
-allowBuilds:
-  electron: true
-  esbuild: true
-  '@tailwindcss/oxide': true
-  electron-winstaller: false
-
-overrides:
-  '@electron/get': 5.1.0

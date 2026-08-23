@@ -27,6 +27,11 @@ const UI = {
     try { invoke('fe_log', { msg: 'UI init: launcher ready' }); } catch (e) {}
     // Esc 返回页面 1 后的事件
     try {
+      window.__TAURI__.event.listen('open-settings', () => {
+        this.openSettings();
+      });
+    } catch (e) {}
+    try {
       window.__TAURI__.event.listen('back-to-launcher', async () => {
         this.embedActive = false;
         this.controlsActive = false;
@@ -113,7 +118,6 @@ const UI = {
     const coreBtn = document.getElementById('btn-core');
     const openBtn = document.getElementById('btn-open');
     const coreLabel = document.getElementById('core-label');
-    const openSub = document.getElementById('open-sub');
     if (!coreBtn) return;
     // 核心按钮：未运行=绿色"启动核心"，运行中=红色"停止核心"
     if (c.running) {
@@ -124,7 +128,6 @@ const UI = {
       openBtn.classList.remove('disabled');
       openBtn.classList.add('green');
       openBtn.disabled = false;
-      openSub.textContent = '进入 127.0.0.1:3080 界面';
     } else if (c.booting) {
       coreBtn.classList.remove('green', 'red');
       coreBtn.classList.add('disabled');
@@ -133,7 +136,6 @@ const UI = {
       openBtn.classList.add('disabled');
       openBtn.classList.remove('green');
       openBtn.disabled = true;
-      openSub.textContent = '等待核心启动…';
     } else {
       // 未运行：绿色启动核心
       coreBtn.classList.remove('disabled', 'red');
@@ -143,7 +145,6 @@ const UI = {
       openBtn.classList.add('disabled');
       openBtn.classList.remove('green');
       openBtn.disabled = true;
-      openSub.textContent = '先启动核心…';
     }
   },
 

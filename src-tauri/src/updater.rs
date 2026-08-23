@@ -1,5 +1,4 @@
 // 版本检查（npm registry，npmmirror 优先 + 官方兜底）与 npm 更新
-use std::process::Command;
 use std::time::Duration;
 
 /// 读取设置(镜像等)
@@ -59,9 +58,23 @@ pub fn is_outdated(local: &str, latest: &str) -> bool {
     }
 }
 
-/// 执行 npm 全局更新（走用户已配置的 registry，如 npmmirror）
+/// 执行 npm 全局更新（走镜像设置一致的 registry，--registry 参数）
 pub fn update_dsh() -> Result<String, String> {
-    let out = crate::winutil::cmd_hidden(&["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
+    let mirror_arg = match setting("mirror").as_deref() {
+        Some("npmjs") => "--registry=https://registry.npmjs.org".to_string(),
+        Some(m) if m.starts_with("custom:") => {
+            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
+        }
+        _ => "--registry=https://registry.npmmirror.com".to_string(),
+    };
+    let out = crate::winutil::cmd_hidden(&[
+        "/C",
+        "npm",
+        "install",
+        "-g",
+        "@deepseek-ai/dsh@latest",
+        &mirror_arg,
+    ])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {
@@ -75,7 +88,21 @@ pub fn update_dsh() -> Result<String, String> {
 
 /// 安装 dsh（体检引导用）
 pub fn install_dsh() -> Result<String, String> {
-    let out = crate::winutil::cmd_hidden(&["/C", "npm", "install", "-g", "@deepseek-ai/dsh"])
+    let mirror_arg = match setting("mirror").as_deref() {
+        Some("npmjs") => "--registry=https://registry.npmjs.org".to_string(),
+        Some(m) if m.starts_with("custom:") => {
+            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
+        }
+        _ => "--registry=https://registry.npmmirror.com".to_string(),
+    };
+    let out = crate::winutil::cmd_hidden(&[
+        "/C",
+        "npm",
+        "install",
+        "-g",
+        "@deepseek-ai/dsh",
+        &mirror_arg,
+    ])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {

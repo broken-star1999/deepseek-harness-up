@@ -89,6 +89,22 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
     Ok(())
 }
 
+/// 只读校验：PID 是否为 dsh 进程（匹配命令行特征，非侵入——只看不写）
+pub fn is_dsh_pid(pid: u32) -> bool {
+    let script = format!(
+        r#"(Get-CimInstance Win32_Process -Filter "ProcessId={}").CommandLine"#,
+        pid
+    );
+    let out = crate::winutil::cmd_hidden(&["/C", "powershell", "-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .ok();
+    if let Some(o) = out {
+        let line = String::from_utf8_lossy(&o.stdout);
+        return line.contains("deepseek-ai") || line.contains("bin.js") || line.contains("deepseek-harness");
+    }
+    false
+}
+
 /// 停止：本工具启动的直接 kill；否则返回错误信息（由上层提示用户确认后按 PID 处理）
 pub fn stop(state: &mut DshState) -> Result<(), String> {
     if let Some(mut c) = state.child.take() {
@@ -96,8 +112,14 @@ pub fn stop(state: &mut DshState) -> Result<(), String> {
         let _ = c.wait();
         return Ok(());
     }
-    // 外部进程：按 PID 结束（调用方需已确认）
+    // 外部进程：先只读校验确实是 dsh（命令行特征），再按 PID 结束——防误杀无关程序
     if let Some(pid) = port_pid() {
+        if !is_dsh_pid(pid) {
+            return Err(format!(
+                "端口 3080 被非 dsh 进程占用（PID {}），为安全起见不自动结束。请手动处理。",
+                pid
+            ));
+        }
         let ok = crate::winutil::exe_hidden(
             "taskkill",
             &["/PID", &pid.to_string(), "/T", "/F"],

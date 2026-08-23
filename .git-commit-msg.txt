@@ -1,0 +1,7 @@
+fix: npm 命令与镜像设置一致性 + 清理
+
+发现缺陷: 镜像设置(npmmirror/npmjs/custom)只作用于版本查询,
+  npm install/uninstall 未带 --registry 走系统配置(不一致)
+修复: update_dsh/install_dsh/uninstaller 全部按 settings[mirror] 追加 --registry
+清理: 4 个文件 unused import(Command) + DshLocator 字段 dead_code 标注
+验证: 编译零警告

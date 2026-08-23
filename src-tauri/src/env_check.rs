@@ -1,7 +1,6 @@
 // 环境体检：Node / npm / dsh / WebView2 / 端口 五项
 use serde::Serialize;
 use std::path::Path;
-use std::process::Command;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

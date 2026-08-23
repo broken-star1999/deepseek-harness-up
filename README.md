@@ -1,5 +1,11 @@
 # DeepSeek Harness Up 🐋
 
+<!-- 徽章（GitHub 仓库创建后取消注释并填入真实链接）
+![CI](https://github.com/USER/deepseek-harness-up/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/USER/deepseek-harness-up)
+![Release](https://img.shields.io/github/v/release/USER/deepseek-harness-up)
+-->
+
 > DSH 启动器 · 内嵌浏览器 · 更新/卸载管理器 —— 非插件、非侵入的外部工具
 
 DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek Harness (`@deepseek-ai/dsh`) 的启动、运行、更新、卸载装进一个便携 exe。

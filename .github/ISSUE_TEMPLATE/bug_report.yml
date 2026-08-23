@@ -1,0 +1,40 @@
+name: 🐛 Bug 报告
+description: 报告一个可复现的问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢提交 Bug！请尽量附上完整信息。
+  - type: textarea
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 打开 DeepSeek Harness Up
+        2. 点击…
+        3. 看到错误…
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 实际 vs 预期
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 运行日志
+      description: 请粘贴 %LOCALAPPDATA%\dsh-up\log.txt 的最后 50 行（排障关键）
+  - type: input
+    attributes:
+      label: 系统环境
+      placeholder: Windows 11 24H2 · Node 24.18 · dsh 0.1.1-rc.2
+  - type: checkboxes
+    attributes:
+      label: 确认
+      options:
+        - label: 我已搜索 issue，没有重复
+          required: true
+  - type: markdown
+    attributes:
+      value: "**注意**：报告时请勿包含任何敏感信息（API Key/密钥）"

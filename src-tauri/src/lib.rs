@@ -808,6 +808,42 @@ fn reset_bg() -> Result<(), String> {
     Ok(())
 }
 
+/// 手动 base64（无 crate 依赖）
+fn b64_encode(data: &[u8]) -> String {
+    const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut s = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
+        s.push(T[((n >> 18) & 63) as usize] as char);
+        s.push(T[((n >> 12) & 63) as usize] as char);
+        s.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
+        s.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    s
+}
+
+/// 自定义壁纸 → data URI（绕开 asset 协议权限，前端直接作为背景）
+#[tauri::command]
+fn get_bg_data() -> Option<String> {
+    let path = settings_snapshot()
+        .get("bg")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())?;
+    let bytes = std::fs::read(&path).ok()?;
+    let lower = path.to_lowercase();
+    let mime = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if lower.ends_with(".webp") {
+        "image/webp"
+    } else {
+        "image/png"
+    };
+    Some(format!("data:{};base64,{}", mime, b64_encode(&bytes)))
+}
+
 #[tauri::command]
 fn get_bg() -> Option<String> {
     settings_snapshot()
@@ -960,6 +996,7 @@ pub fn run() {
             get_bg,
             pick_and_set_bg,
             reset_bg,
+            get_bg_data,
             check_app_update,
             set_mirror,
             get_mirror,

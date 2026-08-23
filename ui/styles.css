@@ -36,7 +36,7 @@ body {
 .brand { font-weight: 700; font-size: 14px; }
 .spacer { flex: 1; }
 .chip-btn {
-  background: rgba(22, 29, 46, 0.7); color: var(--muted); border: 1px solid var(--border);
+  background: rgba(22, 29, 46, 0.55); color: var(--muted); border: 1px solid var(--border);
   border-radius: 10px; padding: 3px 12px; font-size: 12px; cursor: pointer;
   font-family: inherit;
 }
@@ -71,14 +71,14 @@ body {
 #action-view { width: 340px; margin-top: -40px; }
 .action-btn {
   width: 100%; display: flex; align-items: center; justify-content: center; gap: 12px;
-  background: rgba(15, 20, 36, 0.55); backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px;
+  background: rgba(15, 20, 36, 0.18); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.22); border-radius: 14px;
   padding: 16px 20px; margin-bottom: 14px; cursor: pointer; text-align: center;
   color: var(--text); font-family: inherit; transition: border-color .15s, transform .1s, background .15s;
 }
-.action-btn:hover { border-color: rgba(79, 140, 255, 0.7); background: rgba(25, 34, 56, 0.68); transform: translateY(-1px); }
+.action-btn:hover { border-color: rgba(79, 140, 255, 0.7); background: rgba(25, 34, 56, 0.3); transform: translateY(-1px); }
 .action-btn .icon { font-size: 22px; }
-.action-btn .t { font-size: 16px; font-weight: 600; flex: 1; }
+.action-btn .t { font-size: 16px; font-weight: 600; flex: 1; text-shadow: 0 1px 8px rgba(0,0,0,0.85), 0 0 24px rgba(0,0,0,0.5); }
 .action-btn .sub { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 .action-btn.primary {
   background: rgba(79,140,255,.15); border-color: rgba(79,140,255,.55);
@@ -89,7 +89,7 @@ body {
 }
 .link-btn:hover { color: var(--red); }
 .action-btn.green {
-  background: rgba(53, 196, 141, 0.16);
+  background: rgba(53, 196, 141, 0.12);
   border-color: rgba(53, 196, 141, 0.55);
   backdrop-filter: blur(10px);
 }
@@ -101,7 +101,7 @@ body {
 .action-btn.disabled:hover { border-color: var(--border); transform: none; }
 .action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 .action-btn.red {
-  background: rgba(239, 91, 91, 0.16);
+  background: rgba(239, 91, 91, 0.12);
   border-color: rgba(239, 91, 91, 0.55);
   backdrop-filter: blur(10px);
 }
@@ -134,7 +134,7 @@ body {
 .chk input { margin-right: 8px; }
 .modal-actions { display: flex; gap: 10px; margin-top: 14px; justify-content: flex-end; }
 .btn {
-  background: rgba(22, 29, 46, 0.75); color: var(--text); border: 1px solid var(--border);
+  background: rgba(22, 29, 46, 0.55); color: var(--text); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: inherit;
   backdrop-filter: blur(8px);
 }

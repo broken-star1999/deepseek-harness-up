@@ -126,6 +126,10 @@ fn check_update() -> Result<serde_json::Value, String> {
         .ok_or("未检测到 dsh 全局包，无法比较版本")?;
     let latest = updater::registry_latest()?;
     let outdated = updater::is_outdated(&local, &latest);
+    log_line(&format!(
+        "check_update: local={} latest={} outdated={}",
+        local, latest, outdated
+    ));
     Ok(serde_json::json!({
         "online": true,
         "local": local,

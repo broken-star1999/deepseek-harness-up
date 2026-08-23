@@ -27,4 +27,3 @@ warning: fields `dsh_cmd` and `npm_root` are never read
    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `dsh-up-desktop` (lib) generated 3 warnings (run `cargo fix --lib -p dsh-up-desktop` to apply 2 suggestions)
-    Finished `release` profile [optimized] target(s) in 2m 39s

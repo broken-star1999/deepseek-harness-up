@@ -28,6 +28,7 @@ const UI = {
     // Esc 返回页面 1 后的事件
     try {
       window.__TAURI__.event.listen('open-settings', () => {
+        try { invoke('fe_log', { msg: 'EVENT received: open-settings' }); } catch (e) {}
         this.openSettings();
       });
     } catch (e) {}
@@ -482,7 +483,9 @@ const UI = {
     if (btn) { btn.disabled = false; btn.textContent = '选择图片…'; }
   },
 
-  openSettings() {
+  async openSettings() {
+    // DSH 界面打开设置：先把内嵌视图暂移出（否则弹窗被原生 webview 盖住）
+    try { await invoke('park_embed_for_settings'); } catch (e) {}
     // 回填当前 ✕ 行为
     invoke('get_close_default').then((v) => {
       const val = v || 'minimize';
@@ -514,6 +517,7 @@ const UI = {
 
   closeSettings() {
     document.getElementById('modal-settings').classList.add('hidden');
+    try { invoke('restore_embed_after_settings'); } catch (e) {}
   },
 
   async saveSettings() {

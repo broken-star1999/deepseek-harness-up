@@ -6,6 +6,14 @@
 
 > DSH 启动器 · 内嵌浏览器 · 更新/卸载管理器 —— 非插件、非侵入的外部工具
 
+## 🖼 界面预览
+
+| 启动器 | DSH 界面 |
+|---|---|
+| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) |
+
+> 截图基于 v0.1.0 实际运行画面（Win11 · 自定义壁纸）
+
 DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek Harness (`@deepseek-ai/dsh`) 的启动、运行、更新、卸载装进一个便携 exe。
 
 ## ✨ 功能
@@ -37,14 +45,6 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 ```
 
 系统要求：Windows 10/11 x64（WebView2 运行时，Win11 自带）
-
-## 🖼 界面预览
-
-| 启动器 | DSH 界面 |
-|---|---|
-| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) |
-
-> 截图基于 v0.1.0 实际运行画面（Win11 · 自定义壁纸）
 
 ## 🔨 从源码构建
 

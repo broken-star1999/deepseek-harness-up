@@ -4,6 +4,12 @@ use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 pub const DSH_PORT: u16 = 3080;
+
+/// 核心运行日志路径
+pub fn core_log_path() -> std::path::PathBuf {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    std::path::PathBuf::from(la).join("dsh-up").join("core.log")
+}
 #[cfg(windows)]
 pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -74,9 +80,14 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
-    cmd.stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .stdin(Stdio::null());
+    // 核心输出重定向到日志（boot 过程/子命令全记录，可分析黑窗与慢启动来源）
+    if let Ok(f) = std::fs::File::create(core_log_path()) {
+        cmd.stdout(f.try_clone().unwrap_or_else(|_| f.try_clone().unwrap()))
+            .stderr(f)
+            .stdin(Stdio::null());
+    } else {
+        cmd.stdout(Stdio::null()).stderr(Stdio::null()).stdin(Stdio::null());
+    }
     let child = cmd.spawn().map_err(|e| format!("启动 dsh 失败: {}", e))?;
     state.child = Some(child);
     Ok(())

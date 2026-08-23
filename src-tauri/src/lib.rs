@@ -395,7 +395,7 @@ async fn back_to_launcher(
 
 #[tauri::command]
 fn win_minimize(app: tauri::AppHandle) -> Result<(), String> {
-    app.get_webview_window("main")
+    app.get_window("main")
         .ok_or("主窗口不存在")?
         .minimize()
         .map_err(|e| e.to_string())
@@ -403,7 +403,7 @@ fn win_minimize(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn win_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
-    let win = app.get_webview_window("main").ok_or("主窗口不存在")?;
+    let win = app.get_window("main").ok_or("主窗口不存在")?;
     if win.is_maximized().unwrap_or(false) {
         win.unmaximize().map_err(|e| e.to_string())
     } else {
@@ -422,7 +422,13 @@ fn win_close(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("confirm-dialog") {
+    // 诊断：列出全部窗口 label
+    let labels: Vec<String> = app.windows().keys().cloned().collect();
+    log_line(&format!("show_dialog: all windows={:?}", labels));
+
+    // 已存在：也重新居中（不依赖首次定位）
+    if let Some(w) = app.get_window("confirm-dialog") {
+        let _ = w.center();
         let _ = w.set_focus();
         return Ok(());
     }
@@ -438,11 +444,35 @@ async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
     .skip_taskbar(true)
     .resizable(false)
     .inner_size(380.0, 280.0)
+    .visible(false) // 先隐藏：定位完成后才显示，避免"先左上后中心"的闪烁
     .build()
     .map_err(|e| format!("创建弹窗窗口失败: {}", e))?;
 
-    // 内置居中（tauri 处理坐标换算，避开手工换算的 DPI 坑）
-    let _ = win.center();
+    // 精确居中于主窗口：物理坐标直算 + 数据日志（若仍偏，日志可一次性校正）
+    if let Some(mw) = app.get_window("main") {
+        let p = mw
+            .outer_position()
+            .map(|v| (v.x, v.y))
+            .unwrap_or((0, 0));
+        let size = mw
+            .outer_size()
+            .map(|v| (v.width, v.height))
+            .unwrap_or((0, 0));
+        let scale = mw.scale_factor().unwrap_or(1.0);
+        // 弹窗左上角(物理) = 主窗口中心(物理) - 弹窗半宽(物理)
+        let cx = p.0 as f64 + size.0 as f64 / 2.0 - 190.0 * scale;
+        let cy = p.1 as f64 + size.1 as f64 / 2.0 - 140.0 * scale;
+        let r = win.set_position(tauri::PhysicalPosition::new(cx, cy));
+        let actual = win
+            .outer_position()
+            .map(|a| (a.x, a.y))
+            .ok();
+        log_line(&format!(
+            "dialog center: p={:?} size={:?} scale={} set=({:.1},{:.1}) res={:?} actual={:?}",
+            p, size, scale, cx, cy, r.map(|_| "ok"), actual
+        ));
+    }
+    let _ = win.show();
     Ok(())
 }
 
@@ -463,13 +493,13 @@ async fn dialog_confirm(
         let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
         log_line(&format!("dialog_confirm: saved default={}", mode));
     }
-    if let Some(w) = app.get_webview_window("confirm-dialog") {
+    if let Some(w) = app.get_window("confirm-dialog") {
         let _ = w.close();
     }
     if mode == "exit" {
         log_line("dialog_confirm: app.exit(0)");
         app.exit(0);
-    } else if let Some(main) = app.get_webview_window("main") {
+    } else if let Some(main) = app.get_window("main") {
         match main.minimize() {
             Ok(()) => log_line("dialog_confirm: minimized ok"),
             Err(e) => log_line(&format!("dialog_confirm: minimize err={}", e)),
@@ -480,7 +510,7 @@ async fn dialog_confirm(
 
 #[tauri::command]
 async fn hide_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(w) = app.get_webview_window("confirm-dialog") {
+    if let Some(w) = app.get_window("confirm-dialog") {
         let _ = w.close();
     }
     Ok(())

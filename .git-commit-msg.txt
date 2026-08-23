@@ -1,0 +1,16 @@
+fix: 弹窗精确居中 + 根因修复(多webview窗口查表)
+
+【根因】主窗口挂了 embed/controls 两个 child webview 后,
+tauri 的 window.is_webview_window() 返回 false(仅单webview窗口为true),
+get_webview_window("main") 从此永远 None:
+  - 弹窗定位拿不到主窗口 -> 位置偏飞
+  - dialog_confirm 最小化静默失败
+  - 退出只能靠 app.exit(0) 兜底
+
+【修复】7 处 get_webview_window -> get_window(Window表, 与webview数量无关)
+
+【附加】
+- 弹窗居中: 物理坐标直算(主窗口中心-弹窗半宽xscale) + set 后读回验证
+  (日志实证: set=(1347,742.5) actual=(1347,743), 中心与主窗口完全一致)
+- 弹窗出现流程: visible(false) -> 定位 -> show() 零闪烁
+- 调试日志 %LOCALAPPDATA%/dsh-up/log.txt: 窗口清单/坐标/动作全记录

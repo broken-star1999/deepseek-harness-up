@@ -77,11 +77,14 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
             node.replace("'", "''"),
             bin_js.replace("'", "''")
         ));
+    // 隐藏控制台方案(实测最优):
+    // dsh 内部每0.5s spawn 短命 node 子进程(<300ms);
+    // 无台方案会让每个都新建可见台(黑窗x13);
+    // 隐藏台方案让全链路继承隐藏台(终端内跑 dsh 同样不闪的机制)
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // 无控制台创建: powershell/node 本身零窗口
-        cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd.creation_flags(0);
     }
     #[cfg(windows)]
     {

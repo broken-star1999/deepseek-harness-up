@@ -148,6 +148,23 @@ body {
 .btn.danger { background: rgba(239,91,91,.12); border-color: rgba(239,91,91,.5); color: var(--red); }
 #modal-log { margin-top: 10px; font-size: 12px; color: var(--muted); white-space: pre-wrap; }
 .modal-card.wide { width: 460px; }
+body { padding: 0; }
+html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
+#settings-backdrop {
+  position: fixed; inset: 0; background: rgba(8, 12, 24, 0.4);
+}
+.settings-window {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 520px; max-height: 84vh; overflow-y: auto; box-sizing: border-box;
+  padding: 18px 20px 16px;
+  background: rgba(22, 29, 46, 0.96); color: var(--text);
+  border: 1px solid rgba(120, 140, 200, 0.2); border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+.settings-window .row { margin: 6px 0 10px; flex-wrap: wrap; gap: 8px; }
+.settings-window .tabs { margin-bottom: 12px; }
+.settings-window .modal-actions { margin-top: 14px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
 .tab {
   background: transparent; border: none; color: var(--muted); padding: 8px 14px;

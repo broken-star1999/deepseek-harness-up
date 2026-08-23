@@ -17,8 +17,7 @@ pub struct AppState {
     pub controls: Mutex<Option<tauri::webview::Webview>>,
     /// 定位缓存：(时间戳, 结果)，10 秒内复用避免高频 cmd 调用
     pub locator_cache: Mutex<Option<(u128, dsh_locator::DshLocator)>>,
-    /// 设置弹窗期间暂存的 embed 原始位置
-    pub embed_back: Mutex<Option<tauri::Rect>>,
+    pub settings_panel: Mutex<Option<tauri::webview::Webview>>,
 }
 
 impl Default for AppState {
@@ -28,7 +27,7 @@ impl Default for AppState {
             embed: Mutex::new(None),
             controls: Mutex::new(None),
             locator_cache: Mutex::new(None),
-            embed_back: Mutex::new(None),
+            settings_panel: Mutex::new(None),
         }
     }
 }
@@ -497,47 +496,39 @@ async fn back_to_launcher(
     Ok(())
 }
 
-/// 设置弹窗打开前：把 dsh embed 暂移出视口（否则 DOM 弹窗被原生 webview 盖住）
+/// 设置面板：主窗口内的 child webview（最后创建=顶层，盖住 DSH；
+/// 全窗口透明 + DOM 遮罩 → 透出 DSH 背景；与主窗口绑定不分离）
 #[tauri::command]
-async fn park_embed_for_settings(window: Window, state: State<'_, AppState>) -> Result<(), String> {
-    let mut guard = state.embed.lock().unwrap();
-    if let Some(wv) = guard.as_ref() {
-        let prev = wv.bounds().map_err(|e| e.to_string())?;
-        *state.embed_back.lock().unwrap() = Some(prev);
-        let inner = window.inner_size().map_err(|e| e.to_string())?;
-        let scale = window.scale_factor().unwrap_or(1.0);
-        let away = Rect {
-            position: LogicalPosition::new(
-                0.0,
-                inner.height as f64 / scale + 300.0,
-            )
-            .into(),
-            size: LogicalSize::new(inner.width as f64 / scale, 100.0).into(),
-        };
-        let _ = wv.set_bounds(away);
-        log_line("park_embed_for_settings: embed 移出视口");
+async fn show_settings_window(window: Window, state: State<'_, AppState>) -> Result<(), String> {
+    log_line("show_settings_window (child webview)");
+    let inner_size = window.inner_size().map_err(|e| e.to_string())?;
+    let scale = window.scale_factor().unwrap_or(1.0);
+    if state.settings_panel.lock().unwrap().is_some() {
+        return Ok(());
     }
+    let builder = tauri::webview::WebviewBuilder::new(
+        "settings-panel",
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .transparent(true);
+    let wv = window
+        .add_child(
+            builder,
+            LogicalPosition::new(0.0, 0.0),
+            LogicalSize::new(inner_size.width as f64 / scale, inner_size.height as f64 / scale),
+        )
+        .map_err(|e| format!("创建设置面板失败: {}", e))?;
+    *state.settings_panel.lock().unwrap() = Some(wv);
     Ok(())
 }
 
 #[tauri::command]
-async fn restore_embed_after_settings(state: State<'_, AppState>) -> Result<(), String> {
-    let prev = state.embed_back.lock().unwrap().take();
-    let guard = state.embed.lock().unwrap();
-    if let (Some(wv), Some(rect)) = (guard.as_ref(), prev) {
-        let _ = wv.set_bounds(rect);
-        log_line("restore_embed_after_settings: embed 恢复");
+async fn hide_settings_window(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.settings_panel.lock().unwrap();
+    if let Some(wv) = guard.take() {
+        let _ = wv.close();
     }
     Ok(())
-}
-
-/// 顶栏齿轮 → 通知主页面打开设置弹窗
-#[tauri::command]
-async fn open_settings_panel(app: tauri::AppHandle) -> Result<(), String> {
-    log_line("open_settings_panel: 收到齿轮点击, 广播 open-settings");
-    let result = app.emit_to("main", "open-settings", ());
-    log_line(&format!("open_settings_panel: emit_to ok={}", result.is_ok()));
-    result.map_err(|e| e.to_string())
 }
 
 /// 「─」最小化 = 隐藏到系统托盘（任务栏无按钮，托盘图标唤回）
@@ -996,6 +987,7 @@ pub fn run() {
                         if conn.is_ok() {
                             log_line("single-instance: 唤醒请求 → 显示主窗口");
                             if let Some(w) = handle.get_window("main") {
+                                let _ = w.unminimize();
                                 let _ = w.show();
                                 let _ = w.set_focus();
                             }
@@ -1009,11 +1001,12 @@ pub fn run() {
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
             TrayIconBuilder::with_id("dsh-up-tray")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("dsh-up Desktop")
+                .tooltip("DeepSeek Harness Up")
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => {
                         if let Some(w) = app.get_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -1033,6 +1026,8 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         if let Some(w) = app.get_window("main") {
+                            // 先还原最小化态，再显示前置（直接整窗上屏）
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -1066,9 +1061,8 @@ pub fn run() {
             win_minimize,
             win_toggle_maximize,
             win_hide_tray,
-            open_settings_panel,
-            park_embed_for_settings,
-            restore_embed_after_settings,
+            show_settings_window,
+            hide_settings_window,
             win_close,
             start_drag,
             get_close_default,

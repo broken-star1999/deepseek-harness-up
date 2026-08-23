@@ -9,7 +9,7 @@ window.addEventListener("DOMContentLoaded", () => {
   try { invoke("fe_log", { msg: "PAGE LOADED " + location.pathname.split("/").pop() }); } catch (e) {}
 });
 
-// dsh-up Desktop 前端（两页制：启动器 / DSH 全窗口）
+// DeepSeek Harness Up 前端（两页制：启动器 / DSH 全窗口）
 const invoke = window.__TAURI__.core.invoke;
 
 const UI = {
@@ -484,8 +484,7 @@ const UI = {
   },
 
   async openSettings() {
-    // DSH 界面打开设置：先把内嵌视图暂移出（否则弹窗被原生 webview 盖住）
-    try { await invoke('park_embed_for_settings'); } catch (e) {}
+    try { await invoke('show_settings_window'); } catch (e) {}
     // 回填当前 ✕ 行为
     invoke('get_close_default').then((v) => {
       const val = v || 'minimize';
@@ -509,15 +508,14 @@ const UI = {
       try {
         const s = await invoke('get_status');
         document.getElementById('about-info').textContent =
-          'dsh-up Desktop v' + s.appVersion + ' · Tauri 2 · dsh ' + (s.dshVersion || '未安装');
+          'DeepSeek Harness Up v' + s.appVersion + ' · Tauri 2 · dsh ' + (s.dshVersion || '未安装');
       } catch (e) {}
     })();
     document.getElementById('modal-settings').classList.remove('hidden');
   },
 
   closeSettings() {
-    document.getElementById('modal-settings').classList.add('hidden');
-    try { invoke('restore_embed_after_settings'); } catch (e) {}
+    try { invoke('hide_settings_window'); } catch (e) {}
   },
 
   async saveSettings() {

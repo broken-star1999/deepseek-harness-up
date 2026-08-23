@@ -18,7 +18,7 @@ const CTL = {
     try { this.defaultAction = (await invoke('get_close_default')) || null; } catch (e) { this.defaultAction = null; }
     this.applyTheme();
 
-    document.getElementById('btn-settings').onclick = () => invoke('open_settings_panel');
+    document.getElementById('btn-settings').onclick = () => invoke('show_settings_window');
     // 「─」= 标准任务栏最小化（不隐藏）
     document.getElementById('btn-min').onclick = () => invoke('win_minimize');
     document.getElementById('btn-max').onclick = () => invoke('win_toggle_maximize');
@@ -69,7 +69,7 @@ const CTL = {
 
   doDefault() {
     if (this.defaultAction === 'exit') invoke('win_close');
-    else if (this.defaultAction === 'minimize') invoke('win_minimize');
+    else if (this.defaultAction === 'minimize') invoke('win_hide_tray');
     else invoke('back_to_launcher');
   },
 };

@@ -1,0 +1,19 @@
+name: ✨ 功能建议
+description: 提出新功能或改进
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    attributes:
+      label: 需求描述
+      placeholder: |
+        清晰的描述：想解决什么问题？
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 期望的交互（可选）
+      placeholder: 界面/流程大致什么样
+  - type: markdown
+    attributes:
+      value: "**注意**：本工具遵循非侵入原则（不修改 dsh 内部结构/数据），建议默认符合此边界"

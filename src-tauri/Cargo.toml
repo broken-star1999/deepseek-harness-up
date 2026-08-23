@@ -1,12 +1,12 @@
 [package]
-name = "dsh-up-desktop"
+name = "deepseek-harness-up"
 version = "0.1.0"
 description = "DSH launcher & shell"
 authors = ["dsh-up"]
 edition = "2021"
 
 [lib]
-name = "dsh_up_desktop_lib"
+name = "deepseek_harness_up_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

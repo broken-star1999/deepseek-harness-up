@@ -228,6 +228,8 @@ const UI = {
       await this.fail('dsh 核心启动失败: ' + e);
       return;
     }
+    // 提示用户核心启动需要几秒到十几秒（dsh boot 较慢）
+    document.getElementById('core-label').textContent = '核心启动中（约 10 秒）…';
     const ok = await this.waitPort(30);
     this.busy = false;
     if (!ok) {

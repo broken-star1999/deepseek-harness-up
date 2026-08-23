@@ -38,7 +38,7 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 # 前置：Node.js LTS + Rust (rustup, MSVC) + VS Build Tools
 npm install
 npx tauri dev      # 开发调试
-.\build-release.ps1   # 出正式包（自动命名 DeepSeek Harness Up.exe）
+npx tauri build --no-bundle   # 出正式包（deepseek-harness-up.exe）
 ```
 
 ## 📄 许可

@@ -509,6 +509,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "deepseek-harness-up"
+version = "0.1.0"
+dependencies = [
+ "semver",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "ureq",
+]
+
+[[package]]
 name = "defmt"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1198,18 +1210,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
-]
-
-[[package]]
-name = "harness-up"
-version = "0.1.0"
-dependencies = [
- "semver",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "ureq",
 ]
 
 [[package]]

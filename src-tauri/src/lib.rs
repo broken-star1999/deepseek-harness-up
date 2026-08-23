@@ -569,6 +569,14 @@ fn win_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 fn win_close(app: tauri::AppHandle) -> Result<(), String> {
     log_line("win_close: app.exit(0)");
+    // 退出即停核心（与 dialog_confirm exit 分支一致：本工具管理的直接 kill；外部启动的经只读校验）
+    let state = app.state::<AppState>();
+    let mut dsh = state.dsh.lock().unwrap();
+    match dsh_process::stop(&mut dsh) {
+        Ok(()) => log_line("win_close: dsh stopped"),
+        Err(e) => log_line(&format!("win_close: dsh stop note={}", e)),
+    }
+    drop(dsh);
     app.exit(0);
     Ok(())
 }

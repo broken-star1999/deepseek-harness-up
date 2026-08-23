@@ -15,6 +15,8 @@ pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
     pub embed: Mutex<Option<tauri::webview::Webview>>,
     pub controls: Mutex<Option<tauri::webview::Webview>>,
+    /// 定位缓存：(时间戳, 结果)，10 秒内复用避免高频 cmd 调用
+    pub locator_cache: Mutex<Option<(u128, dsh_locator::DshLocator)>>,
 }
 
 impl Default for AppState {
@@ -23,6 +25,7 @@ impl Default for AppState {
             dsh: Mutex::new(dsh_process::DshState::default()),
             embed: Mutex::new(None),
             controls: Mutex::new(None),
+            locator_cache: Mutex::new(None),
         }
     }
 }
@@ -50,8 +53,28 @@ fn ping() -> String {
 
 #[tauri::command]
 fn get_status(state: State<AppState>) -> StatusInfo {
+    // 定位缓存：10 秒内复用（Node 目录遍历很慢，避免每次 get_status 跑 5 个 cmd）
+    let loc = {
+        let mut cache = state.locator_cache.lock().unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        if let Some((ts, cached)) = cache.as_ref() {
+            if now - ts < 10_000 {
+                cached.clone()
+            } else {
+                let fresh = dsh_locator::locate();
+                *cache = Some((now, fresh.clone()));
+                fresh
+            }
+        } else {
+            let fresh = dsh_locator::locate();
+            *cache = Some((now, fresh.clone()));
+            fresh
+        }
+    };
     let mut dsh = state.dsh.lock().unwrap();
-    let loc = dsh_locator::locate();
     let running = dsh_process::running(&mut dsh);
     let booting = false;
 
@@ -98,6 +121,15 @@ fn get_status(state: State<AppState>) -> StatusInfo {
 #[tauri::command]
 fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
     log_line("ACTION start_dsh: 请求启动核心");
+    // 强制刷新定位缓存（安装后立即启动场景）
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let fresh = dsh_locator::locate();
+        *state.locator_cache.lock().unwrap() = Some((now, fresh));
+    }
     let loc = dsh_locator::locate();
     if !loc.installed() {
         return Err("未检测到全局 dsh，请先到体检页一键安装".into());
@@ -329,12 +361,35 @@ fn extract_bg_hex(html: &str) -> Option<String> {
 }
 
 fn cmd_version(cmd: &str) -> Option<String> {
-    let out = crate::winutil::cmd_hidden(&["/C", cmd, "--version"]).output().ok()?;
-    if !out.status.success() {
-        return None;
+    use std::sync::Mutex as SMutex;
+    static NODE_CACHE: SMutex<Option<(u128, Option<String>)>> = SMutex::new(None);
+    static NPM_CACHE: SMutex<Option<(u128, Option<String>)>> = SMutex::new(None);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let slot: &SMutex<Option<(u128, Option<String>)>> = if cmd == "node" {
+        &NODE_CACHE
+    } else {
+        &NPM_CACHE
+    };
+    let mut guard = slot.lock().unwrap();
+    if let Some((ts, val)) = guard.as_ref() {
+        if now - ts < 10_000 {
+            return val.clone();
+        }
     }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    let out = crate::winutil::cmd_hidden(&["/C", cmd, "--version"])
+        .output()
+        .ok()?;
+    let val = if out.status.success() {
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if s.is_empty() { None } else { Some(s) }
+    } else {
+        None
+    };
+    *guard = Some((now, val.clone()));
+    val
 }
 
 /// ===== 悬浮控制（页面 2 的 ─ □ ✕）=====

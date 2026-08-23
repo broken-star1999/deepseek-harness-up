@@ -2,6 +2,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+#[derive(Clone)]
 pub struct DshLocator {
     pub node: Option<String>,
     pub bin_js: Option<PathBuf>,

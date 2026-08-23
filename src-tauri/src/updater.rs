@@ -2,15 +2,40 @@
 use std::process::Command;
 use std::time::Duration;
 
-const REGISTRIES: [&str; 2] = [
-    "https://registry.npmmirror.com/@deepseek-ai/dsh/latest",
-    "https://registry.npmjs.org/@deepseek-ai/dsh/latest",
-];
+/// 读取设置(镜像等)
+fn setting(key: &str) -> Option<String> {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let p = std::path::PathBuf::from(la)
+        .join("dsh-up")
+        .join("settings.json");
+    let text = std::fs::read_to_string(p).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    v.get(key)?.as_str().map(|s| s.to_string())
+}
+
+/// 注册表选择（settings["mirror"]: npmmirror / npmjs / custom:<url>）
+fn registry_chain() -> Vec<String> {
+    match setting("mirror").as_deref() {
+        Some("npmjs") => vec![
+            "https://registry.npmjs.org/@deepseek-ai/dsh/latest".to_string(),
+        ],
+        Some(m) if m.starts_with("custom:") => {
+            let url = m.trim_start_matches("custom:");
+            let mut v = vec![format!("{}/@deepseek-ai/dsh/latest", url.trim_end_matches('/'))];
+            v.push("https://registry.npmmirror.com/@deepseek-ai/dsh/latest".to_string());
+            v
+        }
+        _ => vec![
+            "https://registry.npmmirror.com/@deepseek-ai/dsh/latest".to_string(),
+            "https://registry.npmjs.org/@deepseek-ai/dsh/latest".to_string(),
+        ],
+    }
+}
 
 /// 查询 registry 最新版本；全部失败返回 Err（上层静默降级为离线）
 pub fn registry_latest() -> Result<String, String> {
-    for url in REGISTRIES {
-        match ureq::get(url).timeout(Duration::from_secs(4)).call() {
+    for url in registry_chain() {
+        match ureq::get(url.as_str()).timeout(Duration::from_secs(4)).call() {
             Ok(resp) => {
                 if let Ok(body) = resp.into_string() {
                     if let Ok(v) = serde_json::from_str::<serde_json::Value>(&body) {

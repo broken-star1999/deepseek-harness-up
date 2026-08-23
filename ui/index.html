@@ -81,20 +81,59 @@
     </div>
   </div>
 
-  <!-- 设置弹窗 -->
+  <!-- 设置弹窗（多页） -->
   <div id="modal-settings" class="hidden">
-    <div class="modal-card">
-      <h3>设置</h3>
-      <p class="muted">✕ 关闭行为</p>
-      <label class="chk"><input type="radio" name="close-mode" value="exit" /> 退出主程序（同时结束 dsh）</label>
-      <label class="chk"><input type="radio" name="close-mode" value="minimize" /> 隐藏到任务栏托盘（dsh 继续运行）</label>
-      <p class="muted">启动器壁纸</p>
-      <div class="row">
-        <span class="muted" id="bg-status">默认壁纸</span>
-        <label class="btn file-btn">选择图片…
-          <input type="file" id="bg-file" accept="image/png,image/jpeg,image/webp" style="display:none" />
+    <div class="modal-card wide">
+      <div class="tabs">
+        <button class="tab active" data-tab="general" onclick="UI.switchTab('general')">通用</button>
+        <button class="tab" data-tab="update" onclick="UI.switchTab('update')">更新</button>
+        <button class="tab" data-tab="wallpaper" onclick="UI.switchTab('wallpaper')">壁纸</button>
+        <button class="tab" data-tab="about" onclick="UI.switchTab('about')">关于</button>
+      </div>
+
+      <div class="tab-page active" id="tab-general">
+        <h3>✕ 关闭行为</h3>
+        <label class="chk"><input type="radio" name="close-mode" value="exit" /> 退出主程序（同时结束 dsh）</label>
+        <label class="chk"><input type="radio" name="close-mode" value="minimize" /> 隐藏到任务栏托盘（dsh 继续运行）</label>
+      </div>
+
+      <div class="tab-page" id="tab-update">
+        <h3>dsh 更新</h3>
+        <div class="row">
+          <span class="muted" id="upd-dsh-info">—</span>
+          <button class="btn small" id="btn-upd-dsh" onclick="UI.checkDshUpdate()">检查</button>
+        </div>
+        <div id="upd-dsh-log" class="log"></div>
+        <h3>dsh-up 更新（本软件）</h3>
+        <div class="row">
+          <span class="muted" id="upd-app-info">—</span>
+          <button class="btn small" id="btn-upd-app" onclick="UI.checkAppUpdate()">检查</button>
+        </div>
+        <h3>dsh 更新镜像</h3>
+        <label class="chk"><input type="radio" name="mirror" value="npmmirror" checked /> npmmirror（默认，国内快）</label>
+        <label class="chk"><input type="radio" name="mirror" value="npmjs" /> npm 官方</label>
+        <label class="chk"><input type="radio" name="mirror" value="custom" /> 自定义：
+          <input type="text" id="mirror-custom" class="txt" placeholder="https://registry.example.com" />
         </label>
       </div>
+
+      <div class="tab-page" id="tab-wallpaper">
+        <h3>启动器壁纸</h3>
+        <div class="row">
+          <span class="muted" id="bg-status">默认壁纸</span>
+          <button class="btn small" id="btn-pick-bg" onclick="UI.pickBg()">选择图片…</button>
+          <button class="btn small" id="btn-reset-bg" onclick="UI.resetBg()">恢复默认壁纸</button>
+        </div>
+      </div>
+
+      <div class="tab-page" id="tab-about">
+        <h3>关于 dsh-up Desktop</h3>
+        <p class="muted" id="about-info"></p>
+        <div class="row">
+          <button class="btn small" onclick="UI.openLogs()">打开日志目录</button>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn" onclick="UI.closeSettings()">关闭</button>
         <button class="btn primary" onclick="UI.saveSettings()">保存</button>
@@ -102,7 +141,7 @@
     </div>
   </div>
 
-  <!-- 卸载确认弹窗 -->
+    <!-- 卸载确认弹窗 -->
   <div id="modal" class="hidden">
     <div class="modal-card">
       <h3>卸载 DeepSeek Harness</h3>

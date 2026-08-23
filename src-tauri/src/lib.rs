@@ -645,6 +645,72 @@ fn log_line(msg: &str) {
     }
 }
 
+/// dsh-up 自身更新检查（来源: settings["appUpdateUrl"] 的 JSON: {"version":"x.y.z"}）
+#[tauri::command]
+fn check_app_update() -> Result<serde_json::Value, String> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let url = settings_snapshot()
+        .get("appUpdateUrl")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let Some(url) = url else {
+        return Ok(serde_json::json!({
+            "online": false,
+            "configured": false,
+            "current": current,
+        }));
+    };
+    let resp = ureq::get(&url)
+        .timeout(std::time::Duration::from_secs(4))
+        .call()
+        .map_err(|_| "无法连接更新源".to_string())?;
+    let body = resp.into_string().map_err(|e| e.to_string())?;
+    let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+    let latest = v.get("version").and_then(|x| x.as_str()).unwrap_or("");
+    log_line(&format!("check_app_update: current={} latest={}", current, latest));
+    Ok(serde_json::json!({
+        "online": true,
+        "configured": true,
+        "current": current,
+        "latest": latest,
+        "outdated": latest != "" && current != latest,
+    }))
+}
+
+/// 设置 dsh 更新镜像（npmmirror / npmjs / custom:<url>）
+#[tauri::command]
+fn set_mirror(mirror: String) -> Result<(), String> {
+    let allowed = mirror == "npmmirror"
+        || mirror == "npmjs"
+        || mirror.starts_with("custom:");
+    if !allowed {
+        return Err("无效镜像".into());
+    }
+    let mut s = settings_snapshot();
+    s["mirror"] = serde_json::json!(mirror);
+    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    log_line(&format!("set_mirror: {}", mirror));
+    Ok(())
+}
+
+#[tauri::command]
+fn get_mirror() -> Option<String> {
+    settings_snapshot()
+        .get("mirror")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+#[tauri::command]
+fn open_logs() -> Result<(), String> {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    crate::winutil::cmd_hidden(&["/C", "explorer", dir.to_string_lossy().as_ref()])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 前端上报日志（JS console.error / 未捕获异常 → 统一入日志）
 #[tauri::command]
 fn fe_log(msg: String) {
@@ -656,6 +722,41 @@ fn settings_snapshot() -> serde_json::Value {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_else(|| serde_json::json!({}))
+}
+
+/// 系统文件选择对话框选壁纸（PowerShell OpenFileDialog，独立窗口）
+#[tauri::command]
+fn pick_and_set_bg() -> Result<String, String> {
+    let script = "Add-Type -AssemblyName System.Windows.Forms; $d = New-Object System.Windows.Forms.OpenFileDialog; $d.Filter = '图片文件 (*.png;*.jpg;*.jpeg;*.webp)|*.png;*.jpg;*.jpeg;*.webp|所有文件 (*.*)|*.*'; $d.Title = '选择启动器壁纸'; if ($d.ShowDialog() -eq 'OK') { Write-Output $d.FileName } else { Write-Output '' }";
+    let out = crate::winutil::exe_hidden(
+        "powershell.exe",
+        &[
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            script,
+        ],
+    )
+    .output()
+    .map_err(|e| format!("打开文件对话框失败: {}", e))?;
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if path.is_empty() {
+        return Ok("cancelled".into()); // 用户取消
+    }
+    // 复制到 bg.png + 写 settings
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let dest = dir.join("bg.png");
+    std::fs::copy(&path, &dest).map_err(|e| format!("复制图片失败: {}", e))?;
+    let mut s = settings_snapshot();
+    s["bg"] = serde_json::json!(dest.to_string_lossy().as_ref());
+    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    log_line(&format!("set_bg: from {} -> {}", path, dest.display()));
+    Ok(dest.to_string_lossy().to_string())
 }
 
 /// 保存自定义壁纸（字节 → %LOCALAPPDATA%/dsh-up/bg.png + settings 记录）
@@ -671,6 +772,21 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
     log_line("set_bg: saved");
     Ok(path.to_string_lossy().to_string())
+}
+
+/// 恢复默认壁纸（清 settings.bg + 删除自定义文件）
+#[tauri::command]
+fn reset_bg() -> Result<(), String> {
+    let mut s = settings_snapshot();
+    if let Some(m) = s.as_object_mut() {
+        m.remove("bg");
+    }
+    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let custom = std::path::PathBuf::from(&la).join("dsh-up").join("bg.png");
+    let _ = std::fs::remove_file(&custom);
+    log_line("reset_bg: 恢复默认壁纸");
+    Ok(())
 }
 
 #[tauri::command]
@@ -822,6 +938,12 @@ pub fn run() {
             set_close_default,
             set_bg_bytes,
             get_bg,
+            pick_and_set_bg,
+            reset_bg,
+            check_app_update,
+            set_mirror,
+            get_mirror,
+            open_logs,
             get_dsh_theme
         ])
         .run(tauri::generate_context!())

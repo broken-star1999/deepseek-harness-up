@@ -12,9 +12,9 @@
 
 ## 🖼 界面预览
 
-| 启动器 | DSH 界面 | 自定义壁纸 |
-|---|---|---|
-| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) | ![壁纸](screenshots/wallpaper.jpg) |
+| 启动器 | DSH 界面 |
+|---|---|
+| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) |
 
 > 截图基于 v0.1.0 实际运行画面（Win11 · 自定义壁纸）
 

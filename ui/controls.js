@@ -19,6 +19,7 @@ const CTL = {
     this.applyTheme();
 
     document.getElementById('btn-settings').onclick = () => invoke('open_settings_panel');
+    // 「─」= 标准任务栏最小化（不隐藏）
     document.getElementById('btn-min').onclick = () => invoke('win_minimize');
     document.getElementById('btn-max').onclick = () => invoke('win_toggle_maximize');
     document.getElementById('btn-close').onclick = () => this.requestClose();

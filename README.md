@@ -32,13 +32,21 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 
 系统要求：Windows 10/11 x64（WebView2 运行时，Win11 自带）
 
+## 🖼 界面预览
+
+| 启动器 | DSH 界面 |
+|---|---|
+| *(screenshots/launcher.png)* | *(screenshots/dsh.png)* |
+
+> 上传前请将截图放入 `screenshots/`（运行起来按 Win+Shift+S 截图即可）
+
 ## 🔨 从源码构建
 
 ```powershell
 # 前置：Node.js LTS + Rust (rustup, MSVC) + VS Build Tools
 npm install
-npx tauri dev      # 开发调试
-npx tauri build --no-bundle   # 出正式包（deepseek-harness-up.exe）
+.\\scripts\\dev.ps1           # 开发调试
+.\\scripts\\make-release.ps1  # 一键发布构建（产出 dist\\deepseek-harness-up.exe）
 ```
 
 ## 📄 许可

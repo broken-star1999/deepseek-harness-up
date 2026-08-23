@@ -20,6 +20,26 @@ const UI = {
   _resizeTimer: null,
 
   async init() {
+    // 应用壁纸（自定义 or 默认）
+    try { await this.applyBg(); } catch (e) {}
+    // 壁纸文件选择
+    const bgFile = document.getElementById('bg-file');
+    if (bgFile) {
+      bgFile.onchange = (ev) => {
+        const f = ev.target.files && ev.target.files[0];
+        if (!f) return;
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const arr = new Uint8Array(reader.result);
+            const path = await invoke('set_bg_bytes', { data: Array.from(arr) });
+            document.getElementById('bg-status').textContent = '已选择：' + f.name;
+            this.applyBg();
+          } catch (e) { this.toast('壁纸设置失败', 'warn'); }
+        };
+        reader.readAsArrayBuffer(f);
+      };
+    }
     // 统一顶栏：启动即显示（logo/名称/拖拽/─□✕）
     try { await invoke('show_controls', this.ctrlRect()); } catch (e) {}
     try { invoke('fe_log', { msg: 'UI init: launcher ready' }); } catch (e) {}
@@ -180,6 +200,41 @@ const UI = {
 
   /* ========== 更新 ========== */
 
+  // 手动检查更新（界面按钮）：有新版→弹窗，无/离线→toast
+  async manualCheckUpdate() {
+    const btn = document.getElementById('btn-check-update');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.textContent = '检查中…';
+    try {
+      const u = await invoke('check_update');
+      btn.disabled = false;
+      btn.textContent = '检查更新';
+      if (u && u.outdated) {
+        // 有新版 → 弹更新确认窗
+        this.openUpdateModal(u);
+      } else if (u) {
+        this.toast('已是最新版本 ' + u.local + ' ✅', 'ok');
+      }
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = '检查更新';
+      this.toast('网络不可用，无法检查更新', 'warn');
+    }
+  },
+
+  toast(msg, kind) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = kind || '';
+    t.classList.remove('hidden');
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => {
+      t.classList.add('hidden');
+    }, 2200);
+  },
+
   async checkUpdate() {
     try {
       const u = await invoke('check_update');
@@ -220,6 +275,7 @@ const UI = {
       const r = await invoke('update_dsh');
       log.innerHTML = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
       btn.textContent = '完成';
+      this.toast('dsh 已更新，核心重启后生效', 'ok');
       this.closeUpdateModal();
       await this.checkEnv();
     } catch (e) {
@@ -257,7 +313,7 @@ const UI = {
       await this.fail('等待 dsh 服务超时（30s）');
       return;
     }
-    try { await this.checkEnv(); } catch (e) {}
+    try { await this.refreshStatusOnly(); } catch (e) {}
   },
 
   // 打开 dsh 界面（核心已运行才可点）
@@ -316,6 +372,47 @@ const UI = {
   },
 
   /* ========== 卸载弹窗 ========== */
+
+  openSettings() {
+    // 回填当前 ✕ 行为
+    invoke('get_close_default').then((v) => {
+      const val = v || 'minimize';
+      document.querySelectorAll('#modal-settings input[name="close-mode"]').forEach((r) => {
+        r.checked = r.value === val;
+      });
+    }).catch(() => {});
+    document.getElementById('modal-settings').classList.remove('hidden');
+  },
+
+  closeSettings() {
+    document.getElementById('modal-settings').classList.add('hidden');
+  },
+
+  async saveSettings() {
+    const mode = document.querySelector('#modal-settings input[name="close-mode"]:checked');
+    if (mode) {
+      try { await invoke('set_close_default', { value: mode.value }); } catch (e) {}
+      this.toast('✕ 默认行为已保存', 'ok');
+    }
+    this.closeSettings();
+  },
+
+  // 应用壁纸（自定义文件 or 内置默认 bg.png）
+  async applyBg() {
+    const launcher = document.getElementById('launcher');
+    if (!launcher) return;
+    try {
+      const bg = await invoke('get_bg');
+      if (bg) {
+        const src = window.__TAURI__.core.convertFileSrc(bg);
+        launcher.style.backgroundImage = "url('" + src + "')";
+        document.getElementById('bg-status').textContent = '自定义壁纸';
+      } else {
+        launcher.style.backgroundImage = "url('bg.png')";
+        document.getElementById('bg-status').textContent = '默认壁纸';
+      }
+    } catch (e) {}
+  },
 
   openModal() {
     document.getElementById('modal').classList.remove('hidden');

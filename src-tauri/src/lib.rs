@@ -658,6 +658,29 @@ fn settings_snapshot() -> serde_json::Value {
         .unwrap_or_else(|| serde_json::json!({}))
 }
 
+/// 保存自定义壁纸（字节 → %LOCALAPPDATA%/dsh-up/bg.png + settings 记录）
+#[tauri::command]
+fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("bg.png");
+    std::fs::write(&path, &data).map_err(|e| e.to_string())?;
+    let mut s = settings_snapshot();
+    s["bg"] = serde_json::json!(path.to_string_lossy());
+    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    log_line("set_bg: saved");
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+fn get_bg() -> Option<String> {
+    settings_snapshot()
+        .get("bg")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
 #[tauri::command]
 fn get_close_default() -> Option<String> {
     settings_snapshot()
@@ -797,6 +820,8 @@ pub fn run() {
             start_drag,
             get_close_default,
             set_close_default,
+            set_bg_bytes,
+            get_bg,
             get_dsh_theme
         ])
         .run(tauri::generate_context!())

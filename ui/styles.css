@@ -14,7 +14,20 @@ body {
 .muted { color: var(--muted); font-size: 13px; }
 
 /* ===== 页面 1 ===== */
-#launcher { display: flex; flex-direction: column; height: 100%; padding-top: 38px; }
+#launcher {
+  display: flex; flex-direction: column; height: 100%; padding-top: 38px;
+  background-image: url('bg.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* 暗化遮罩（保证按钮/文字可读） */
+#launcher::before {
+  content: ""; position: absolute; inset: 38px 0 0 0;
+  background: linear-gradient(180deg, rgba(10,14,26,0.55), rgba(10,14,26,0.75));
+  pointer-events: none; z-index: 0;
+}
+#launcher-main { position: relative; z-index: 1; }
 #topstrip {
   display: flex; align-items: center; gap: 12px; padding: 8px 16px;
   background: var(--panel); border-bottom: 1px solid var(--border);
@@ -22,10 +35,26 @@ body {
 }
 .brand { font-weight: 700; font-size: 14px; }
 .spacer { flex: 1; }
+.chip-btn {
+  background: var(--panel); color: var(--muted); border: 1px solid var(--border);
+  border-radius: 10px; padding: 3px 12px; font-size: 12px; cursor: pointer;
+  font-family: inherit;
+}
+.chip-btn:hover { border-color: var(--accent); color: var(--text); }
+.chip-btn:disabled { opacity: .5; cursor: not-allowed; }
+#toast {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 20px; font-size: 13px; color: var(--text); z-index: 200;
+  transition: opacity .4s; box-shadow: 0 6px 24px rgba(0,0,0,.4);
+}
+#toast.ok { border-color: var(--green); color: var(--green); }
+#toast.warn { border-color: var(--yellow); color: var(--yellow); }
 .update-badge {
   font-size: 12px; color: var(--yellow); border: 1px solid rgba(245,193,77,.5);
   padding: 2px 8px; border-radius: 10px; cursor: pointer;
 }
+#launcher { position: relative; }
 #launcher-main { flex: 1; display: flex; align-items: center; justify-content: center; position: relative; }
 #launcher-meta {
   position: absolute; top: 10px; left: 0; right: 0;

@@ -66,6 +66,20 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         "未运行".into()
     };
 
+    // 状态变化日志（核心启停/意外退出检测）
+    {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        static LAST: AtomicBool = AtomicBool::new(false);
+        let cur = running;
+        if cur != LAST.swap(cur, Ordering::SeqCst) {
+            let own = dsh_process::own_alive(&mut dsh);
+            let port = dsh_process::port_open();
+            log_line(&format!(
+                "STATE dsh 状态变化: {} (own={} port={} installed={} dsh={:?})",
+                if cur { "运行" } else { "停止" }, own, port, loc.installed(), loc.version()
+            ));
+        }
+    }
     StatusInfo {
         running,
         booting,
@@ -83,6 +97,7 @@ fn get_status(state: State<AppState>) -> StatusInfo {
 
 #[tauri::command]
 fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
+    log_line("ACTION start_dsh: 请求启动核心");
     let loc = dsh_locator::locate();
     if !loc.installed() {
         return Err("未检测到全局 dsh，请先到体检页一键安装".into());
@@ -96,6 +111,7 @@ fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn stop_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
+    log_line("ACTION stop_dsh: 请求停止核心");
     let mut dsh = state.dsh.lock().unwrap();
     dsh_process::stop(&mut dsh)?;
     Ok(serde_json::json!({ "ok": true, "message": "dsh 已停止" }))
@@ -103,6 +119,7 @@ fn stop_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn check_update() -> Result<serde_json::Value, String> {
+    log_line("ACTION check_update: 版本检查开始");
     let loc = dsh_locator::locate();
     let local = loc
         .version()
@@ -130,6 +147,7 @@ fn env_check() -> Vec<env_check::CheckItem> {
 
 #[tauri::command]
 fn env_action(action: String) -> Result<serde_json::Value, String> {
+    log_line(&format!("ACTION env_action: {}", action));
     match action.as_str() {
         "node_download" => {
             open_url("https://nodejs.org/en/download")?;
@@ -166,6 +184,7 @@ fn uninstall(
     clear_npx: bool,
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
+    log_line(&format!("ACTION uninstall: clearConfig={} clearNpx={}", clear_config, clear_npx));
     // 先停止 dsh（若本工具管理的进程在跑）
     {
         let mut dsh = state.dsh.lock().unwrap();
@@ -190,6 +209,7 @@ async fn show_embed(
     width: f64,
     height: f64,
 ) -> Result<serde_json::Value, String> {
+    log_line(&format!("ACTION show_embed: rect=({:.0},{:.0} {}x{})", x, y, width, height));
     if !dsh_process::port_open() {
         return Err("dsh 未运行（端口 3080 未就绪）".into());
     }
@@ -541,12 +561,20 @@ fn settings_path() -> std::path::PathBuf {
     std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
 }
 
-/// 调试日志（%LOCALAPPDATA%\dsh-up\log.txt）
+/// 运行日志（%LOCALAPPDATA%\dsh-up\log.txt）：
+/// - 记录所有运行路径（启动/检查/弹窗/更新/卸载/错误）
+/// - 超过 1MB 自动轮转为 log.1.txt（保留最近一份）
 fn log_line(msg: &str) {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let p = std::path::PathBuf::from(la).join("dsh-up").join("log.txt");
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
+    }
+    // 轮转：> 1MB → log.1.txt 覆盖保留
+    if let Ok(md) = std::fs::metadata(&p) {
+        if md.len() > 1024 * 1024 {
+            let _ = std::fs::rename(&p, p.with_file_name("log.1.txt"));
+        }
     }
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -556,6 +584,12 @@ fn log_line(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
         let _ = writeln!(f, "[{}] {}", ts, msg);
     }
+}
+
+/// 前端上报日志（JS console.error / 未捕获异常 → 统一入日志）
+#[tauri::command]
+fn fe_log(msg: String) {
+    log_line(&format!("FRONTEND {}", msg));
 }
 
 fn settings_snapshot() -> serde_json::Value {
@@ -647,6 +681,7 @@ pub fn run() {
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
             ping,
+            fe_log,
             get_status,
             start_dsh,
             stop_dsh,

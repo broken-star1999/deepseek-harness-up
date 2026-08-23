@@ -221,11 +221,23 @@ fn uninstall(
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
     log_line(&format!("ACTION uninstall: clearConfig={} clearNpx={}", clear_config, clear_npx));
-    // 先停止 dsh（若本工具管理的进程在跑）
+    // 先停止 dsh：本工具管理的直接 kill；外部启动的经只读校验(dsh特征)后 taskkill
+    // （修复: 外部核心占用全局包文件会导致 npm uninstall 必败）
     {
         let mut dsh = state.dsh.lock().unwrap();
         if dsh_process::own_alive(&mut dsh) {
             let _ = dsh_process::stop(&mut dsh);
+        } else if let Some(pid) = dsh_process::port_pid() {
+            if dsh_process::is_dsh_pid(pid) {
+                let _ = crate::winutil::exe_hidden(
+                    "taskkill",
+                    &["/PID", &pid.to_string(), "/T", "/F"],
+                )
+                .output();
+                log_line(&format!("uninstall: 已清理外部 dsh PID {}", pid));
+            } else {
+                log_line(&format!("uninstall: 3080 被非dsh进程占用 PID {}, 跳过清理", pid));
+            }
         }
     }
     let log = uninstaller::run(clear_config, clear_npx)?;
@@ -472,6 +484,13 @@ async fn back_to_launcher(
     if embed_was {
         let _ = window.emit("back-to-launcher", ());
     }
+    Ok(())
+}
+
+/// 顶栏齿轮 → 通知主页面打开设置弹窗
+#[tauri::command]
+async fn open_settings_panel(app: tauri::AppHandle) -> Result<(), String> {
+    let _ = app.emit_to("main", "open-settings", ());
     Ok(())
 }
 
@@ -932,6 +951,7 @@ pub fn run() {
             back_to_launcher,
             win_minimize,
             win_toggle_maximize,
+            open_settings_panel,
             win_close,
             start_drag,
             get_close_default,

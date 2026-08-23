@@ -483,6 +483,7 @@ async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn dialog_confirm(
     app: tauri::AppHandle,
+    state: State<'_, AppState>,
     mode: String,
     no_remind: bool,
 ) -> Result<(), String> {
@@ -499,6 +500,13 @@ async fn dialog_confirm(
         let _ = w.close();
     }
     if mode == "exit" {
+        // 直接退出 = 程序退出 + 结束 dsh 服务（用户需求）
+        let mut dsh = state.dsh.lock().unwrap();
+        match dsh_process::stop(&mut dsh) {
+            Ok(()) => log_line("dialog_confirm: dsh stopped (exit)"),
+            Err(e) => log_line(&format!("dialog_confirm: dsh stop note={}", e)),
+        }
+        drop(dsh);
         log_line("dialog_confirm: app.exit(0)");
         app.exit(0);
     } else if let Some(main) = app.get_window("main") {

@@ -57,7 +57,9 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
     }
 
     let mut cmd = Command::new(node);
-    cmd.arg(bin_js).arg("web");
+    // --no-open: dsh web 默认 openBrowser=true 会自动弹系统浏览器，
+    // 我们必须禁止（内嵌显示是唯一途径），否则每次启动都弹浏览器
+    cmd.arg(bin_js).arg("web").arg("--no-open");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

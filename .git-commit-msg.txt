@@ -1,9 +1,0 @@
-fix: --no-open 防浏览器弹出 + 直接退出结束 dsh + 项目检查
-
-1. dsh web 默认 openBrowser=true (官方 dsh-web-app/startup.js 实证)
-   → 启动参数加 --no-open,杜绝每次启动弹系统浏览器(鬼畜根源之一)
-2. 需求变更: 弹窗选"退出主程序"→ 先停止 dsh 进程再 app.exit(0)
-   隐藏到任务栏托盘 → dsh 保持运行(说明文案同步)
-3. 检查结论: 前后端命令契约一致 / DOM引用完整 / 配置齐全
-4. 撤销误加的 tauri-plugin-single-instance(零插件原则)
-5. REQUIREMENTS 更新退出语义

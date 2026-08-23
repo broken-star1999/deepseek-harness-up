@@ -696,8 +696,40 @@ fn open_url(url: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // ===== 单实例锁（纯 std，零插件）=====
+    // 绑定 127.0.0.1:3081 作为实例锁：
+    //   成功 = 唯一实例（独占端口，全生命周期持有，唤醒监听）
+    //   失败 = 已有实例 → 发送唤醒信号（TCP 连接）→ 本实例退出
+    let instance_listener: Option<std::net::TcpListener> =
+        match std::net::TcpListener::bind("127.0.0.1:3081") {
+            Ok(l) => {
+                log_line("single-instance: 唯一实例（3081 锁已持有）");
+                Some(l)
+            }
+            Err(_) => {
+                log_line("single-instance: 检测到已有实例，发送唤醒信号");
+                let _ = std::net::TcpStream::connect("127.0.0.1:3081");
+                std::process::exit(0);
+            }
+        };
+
     tauri::Builder::default()
-        .setup(|app| {
+        .setup(move |app| {
+            // ===== 唤醒监听线程：收到连接 → 显示并聚焦主窗口 =====
+            if let Some(listener) = instance_listener {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    for conn in listener.incoming() {
+                        if conn.is_ok() {
+                            log_line("single-instance: 唤醒请求 → 显示主窗口");
+                            if let Some(w) = handle.get_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    }
+                });
+            }
             // 系统托盘：常驻右下角，恢复窗口/退出入口
             let show_item = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;

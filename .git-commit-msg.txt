@@ -1,4 +1,0 @@
-chore: 产物名改 deepseek-harness-up(无空格全名, 构建直出)
-
-- 移除 build-release.ps1 改名 hack
-- Cargo/main/README 同步

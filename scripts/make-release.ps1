@@ -5,7 +5,7 @@ Set-Location "$PSScriptRoot\.."
 
 Write-Output "==> 清理运行进程"
 Get-Process "deepseek-harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process "dsh-up-desktop","harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process "deepseek-harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Output "==> 构建 release"
 $env:Path += ";$env:USERPROFILE\.cargo\bin"

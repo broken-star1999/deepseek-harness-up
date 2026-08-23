@@ -31,9 +31,14 @@
           <span class="sub">npm 全局安装 @deepseek-ai/dsh</span>
         </button>
 
-        <button id="btn-launch" class="action-btn primary hidden">
-          <span class="icon">🚀</span><span class="t">启动 DSH</span>
-          <span class="sub" id="launch-sub">进入 127.0.0.1:3080 界面</span>
+        <button id="btn-core" class="action-btn hidden">
+          <span class="icon">⚡</span><span class="t" id="core-label">启动 dsh 核心</span>
+          <span class="sub">后台运行 dsh web --no-open</span>
+        </button>
+
+        <button id="btn-open" class="action-btn disabled hidden">
+          <span class="icon">🌐</span><span class="t">打开 dsh</span>
+          <span class="sub" id="open-sub">等待核心启动…</span>
         </button>
 
         <div id="busy-view" class="hidden">

@@ -58,6 +58,17 @@ body {
   margin-top: 10px; cursor: pointer;
 }
 .link-btn:hover { color: var(--red); }
+.action-btn.green {
+  background: rgba(53, 196, 141, 0.12);
+  border-color: rgba(53, 196, 141, 0.55);
+}
+.action-btn.green .icon { color: var(--green); }
+.action-btn.green .t { color: var(--green); }
+.action-btn.disabled {
+  opacity: 0.45; cursor: not-allowed;
+}
+.action-btn.disabled:hover { border-color: var(--border); transform: none; }
+.action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* ===== 页面 2 ===== */
 #dsh-page { position: fixed; inset: 0; background: #0b0f1a; }

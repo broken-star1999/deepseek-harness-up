@@ -36,8 +36,7 @@ pub fn is_outdated(local: &str, latest: &str) -> bool {
 
 /// 执行 npm 全局更新（走用户已配置的 registry，如 npmmirror）
 pub fn update_dsh() -> Result<String, String> {
-    let out = Command::new("cmd")
-        .args(["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
+    let out = crate::winutil::cmd_hidden(&["/C", "npm", "install", "-g", "@deepseek-ai/dsh@latest"])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {
@@ -51,8 +50,7 @@ pub fn update_dsh() -> Result<String, String> {
 
 /// 安装 dsh（体检引导用）
 pub fn install_dsh() -> Result<String, String> {
-    let out = Command::new("cmd")
-        .args(["/C", "npm", "install", "-g", "@deepseek-ai/dsh"])
+    let out = crate::winutil::cmd_hidden(&["/C", "npm", "install", "-g", "@deepseek-ai/dsh"])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {

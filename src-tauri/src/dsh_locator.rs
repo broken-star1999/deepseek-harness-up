@@ -34,7 +34,7 @@ pub fn npm_global_root() -> Option<String> {
 
 /// 在 PATH 中查找第一个可执行文件（node / dsh）
 pub fn where_first(name: &str) -> Option<String> {
-    let out = Command::new("cmd").args(["/C", "where", name]).output().ok()?;
+    let out = crate::winutil::cmd_hidden(&["/C", "where", name]).output().ok()?;
     if !out.status.success() {
         return None;
     }

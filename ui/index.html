@@ -24,20 +24,23 @@
     </aside>
 
     <main id="content">
-      <section class="page active" id="page-console">
-        <div class="card">
-          <div class="row">
-            <div>
-              <div id="console-big-status" class="big-status">–</div>
-              <div class="muted" id="console-detail">获取状态中…</div>
-            </div>
-            <div class="btn-group">
-              <button id="btn-start" class="btn primary" onclick="UI.startDsh()">▶ 启动 dsh</button>
-              <button id="btn-stop" class="btn danger" onclick="UI.stopDsh()">⏹ 停止 dsh</button>
-              <button id="btn-refresh" class="btn" onclick="UI.refresh()">⟳ 刷新</button>
-            </div>
+      <!-- 控制台页：工具条 + 内嵌 DSH -->
+      <section class="page active page-console" id="page-console">
+        <div id="console-toolbar">
+          <span id="console-state" class="muted">–</span>
+          <div class="btn-group">
+            <button id="btn-start" class="btn primary" onclick="UI.startDsh()">▶ 启动 dsh</button>
+            <button id="btn-stop" class="btn danger" onclick="UI.stopDsh()">⏹ 停止</button>
+            <button id="btn-refresh" class="btn" onclick="UI.refresh()">⟳ 刷新</button>
           </div>
-          <div id="console-log" class="log"></div>
+        </div>
+        <div id="embed-slot">
+          <div id="embed-status">
+            <div class="spinner"></div>
+            <p class="muted">正在连接 127.0.0.1:3080 …</p>
+            <p class="muted small" id="embed-error"></p>
+            <button id="embed-retry" class="btn" onclick="UI.refreshEmbed()">重试</button>
+          </div>
         </div>
       </section>
 

@@ -3,9 +3,10 @@ const invoke = window.__TAURI__.core.invoke;
 
 const UI = {
   page: "console",
+  embedActive: false,
+  _resizeTimer: null,
 
   init() {
-    // 侧栏切换
     document.querySelectorAll(".nav").forEach((btn) => {
       btn.onclick = () => {
         document.querySelectorAll(".nav").forEach((b) => b.classList.remove("active"));
@@ -17,6 +18,12 @@ const UI = {
         this.loadPage();
       };
     });
+    window.addEventListener("resize", () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => {
+        if (this.page === "console" && this.embedActive) this.showEmbed();
+      }, 150);
+    });
     this.refresh();
     setInterval(() => {
       if (this.page === "console") this.refreshStatus(true);
@@ -25,7 +32,7 @@ const UI = {
 
   async refresh() {
     await this.refreshStatus();
-    if (this.page === "console") await this.loadConsole();
+    if (this.page === "console") this.syncEmbed();
   },
 
   async refreshStatus(silent) {
@@ -43,57 +50,104 @@ const UI = {
         badge.className = "status status-idle";
       }
       document.getElementById("version-badge").textContent =
-        "版本 " + (s.dshVersion || "未安装") + (s.npmOnline === false ? " · 离线" : "");
+        "版本 " + (s.dshVersion || "未安装");
       const ub = document.getElementById("update-badge");
       if (s.updateAvailable) { ub.classList.remove("hidden"); ub.textContent = "可更新 → " + s.latestVersion; }
       else ub.classList.add("hidden");
+      if (this.page === "console") {
+        const st = document.getElementById("console-state");
+        st.textContent = s.detail || "";
+        document.getElementById("btn-start").disabled = s.running || !s.installed;
+        document.getElementById("btn-stop").disabled = !s.running;
+      }
     } catch (e) { /* 静默 */ }
   },
 
-  async loadConsole() {
-    try {
-      const s = await invoke("get_status");
-      const big = document.getElementById("console-big-status");
-      big.textContent = s.running ? "🟢 dsh 运行中" : s.booting ? "🟡 启动中…" : "⚪ dsh 未运行";
-      document.getElementById("console-detail").textContent = s.detail || "";
-      document.getElementById("btn-start").disabled = s.running || s.booting || !s.installed;
-      document.getElementById("btn-stop").disabled = !s.running;
-    } catch (e) {
-      document.getElementById("console-detail").textContent = "读取状态失败: " + e;
-    }
-  },
-
-  async startDsh() {
-    this.log("console-log", "启动 dsh…");
-    try {
-      const r = await invoke("start_dsh");
-      this.log("console-log", r.ok ? "✅ dsh 已启动" : "启动失败: " + (r.message || ""), r.ok);
-      this.refresh();
-    } catch (e) { this.log("console-log", "启动失败: " + e, false); }
+  startDsh() {
+    this.logConsole("启动 dsh…");
   },
 
   async stopDsh() {
-    // 前端确认：安全护栏（场景3B/5）
     if (!confirm("确定停止 dsh 吗？（DSH 服务将关闭）")) return;
-    this.log("console-log", "停止 dsh…");
     try {
-      const r = await invoke("stop_dsh");
-      this.log("console-log", r.ok ? "✅ dsh 已停止" : "取消失败: " + (r.message || ""), r.ok);
+      await invoke("stop_dsh");
+      document.getElementById("console-state").textContent = "已停止";
+      await this.hideEmbed();
       this.refresh();
-    } catch (e) { this.log("console-log", "停止失败: " + e, false); }
+    } catch (e) {
+      alert("停止失败: " + e);
+    }
   },
 
-  async loadPage() {
-    if (this.page === "update") await this.loadUpdate();
-    else if (this.page === "checks") await this.loadChecks();
-    else if (this.page === "uninstall") await this.loadUninstall();
-    else if (this.page === "about") await this.loadAbout();
+  /** 内嵌视图同步：按环境决定 显示/隐藏/错误态 */
+  async syncEmbed() {
+    if (this.page !== "console") { await this.hideEmbed(); return; }
+    try {
+      const s = await invoke("get_status");
+      if (!s.running) {
+        this.setEmbedStatus("error", "dsh 未运行 —— 点击上方「▶ 启动 dsh」", "");
+        this.hideEmbed();
+        return;
+      }
+      this.showEmbed();
+    } catch (e) { /* ignore */ }
+  },
+
+  async showEmbed() {
+    const slot = document.getElementById("embed-slot");
+    if (!slot) return;
+    const rect = slot.getBoundingClientRect();
+    try {
+      await invoke("show_embed", {
+        x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+      });
+      slot.classList.add("embedded");
+      this.embedActive = true;
+      this.setEmbedStatus("loading", "", "");
+    } catch (e) {
+      this.setEmbedStatus("error", "无法显示 DSH 界面", String(e));
+      this.embedActive = false;
+    }
+  },
+
+  async hideEmbed() {
+    this.embedActive = false;
+    const slot = document.getElementById("embed-slot");
+    if (slot) slot.classList.remove("embedded");
+    try { await invoke("hide_embed"); } catch (e) { /* ignore */ }
+  },
+
+  async refreshEmbed() {
+    await this.hideEmbed();
+    this.setEmbedStatus("loading", "", "");
+    this.showEmbed();
+  },
+
+  setEmbedStatus(kind, title, error) {
+    const holder = document.getElementById("embed-status");
+    holder.className = kind === "error" ? "error-holder" : "";
+    const errEl = document.getElementById("embed-error");
+    const titleP = holder.querySelector("p.muted:not(.small)");
+    if (titleP) titleP.textContent = title;
+    errEl.textContent = error || "";
+  },
+
+  logConsole(text) {
+    const st = document.getElementById("console-state");
+    if (st) st.textContent = text;
+  },
+
+  loadPage() {
+    if (this.page === "update") this.loadUpdate();
+    else if (this.page === "checks") this.loadChecks();
+    else if (this.page === "uninstall") this.loadUninstall();
+    else if (this.page === "about") this.loadAbout();
+    else if (this.page === "console") this.syncEmbed();
   },
 
   async loadUpdate() {
     const box = document.getElementById("update-box");
     box.textContent = "正在检查更新…";
-    this.log("update-log", "");
     try {
       const u = await invoke("check_update");
       if (!u.online) { box.textContent = "离线状态，无法检查更新（不影响使用）"; return; }
@@ -107,13 +161,15 @@ const UI = {
   },
 
   async doUpdate() {
-    this.log("update-log", "npm i -g @deepseek-ai/dsh@latest …");
+    const log = document.getElementById("update-log");
+    log.textContent = "npm i -g @deepseek-ai/dsh@latest …";
     try {
-      // 后端以事件流推送日志（占位：先一次性返回）
       const r = await invoke("update_dsh");
-      this.log("update-log", r.message || "更新完成", r.ok);
-      if (r.ok) this.refreshStatus(true);
-    } catch (e) { this.log("update-log", "更新失败: " + e, false); }
+      log.innerHTML = (r.ok ? "" : "⚠ ") + (r.message || "更新完成");
+      this.refreshStatus(true);
+    } catch (e) {
+      log.innerHTML = "<span class='err'>更新失败: " + e + "</span>";
+    }
   },
 
   async loadChecks() {
@@ -124,7 +180,7 @@ const UI = {
       box.innerHTML = items.map((it) =>
         '<div class="chk-item"><span class="dot ' + (it.ok ? "ok" : it.warn ? "warn" : "bad") + '"></span>' +
         "<b>" + it.name + "</b>&nbsp;" + (it.detail || "") +
-        (it.action ? ' <button class="btn" onclick="UI.doAction(' + JSON.stringify(it.action).replace(/"/g, "&quot;") + ')">' + it.actionLabel + "</button>" : "") +
+        (it.action ? ' <button class="btn small-btn" onclick="UI.doAction(' + JSON.stringify(it.action).replace(/"/g, "&quot;") + ')">' + it.actionLabel + "</button>" : "") +
         "</div>"
       ).join("");
     } catch (e) { box.textContent = "体检失败: " + e; }
@@ -132,8 +188,12 @@ const UI = {
 
   async doAction(action) {
     if (!action) return;
-    try { const r = await invoke("env_action", { action }); alert(r.message || "已执行"); this.loadChecks(); }
-    catch (e) { alert("执行失败: " + e); }
+    try {
+      const r = await invoke("env_action", { action });
+      alert(r.message || "已执行");
+      this.loadChecks();
+      await this.refreshStatus(true);
+    } catch (e) { alert("执行失败: " + e); }
   },
 
   async loadUninstall() {
@@ -148,28 +208,23 @@ const UI = {
     if (cfg) msg += "\n⚠ 将同时删除 ~/.dsh（profiles、会话记录等），不可恢复！";
     if (npx) msg += "\n⚠ 将同时清理 npx 缓存目录。";
     if (!confirm(msg)) return;
-    this.log("uninstall-log", "卸载中…");
+    const log = document.getElementById("uninstall-log");
+    log.textContent = "卸载中…";
     try {
       const r = await invoke("uninstall", { clearConfig: cfg, clearNpx: npx });
-      this.log("uninstall-log", r.message || "完成", r.ok);
+      log.innerHTML = (r.ok ? "" : "⚠ ") + (r.message || "完成");
       this.refreshStatus(true);
-    } catch (e) { this.log("uninstall-log", "卸载失败: " + e, false); }
+    } catch (e) {
+      log.innerHTML = "<span class='err'>卸载失败: " + e + "</span>";
+    }
   },
 
   async loadAbout() {
-    document.getElementById("about-version").textContent = "dsh-up Desktop v" +
-      (await invoke("get_status")).appVersion + " · Tauri 2 · 独立外部工具";
-  },
-
-  log(id, text, ok) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (text === "") { el.textContent = ""; return; }
-    const line = document.createElement("div");
-    line.className = ok === undefined ? "" : ok ? "ok" : "err";
-    line.textContent = text;
-    el.appendChild(line);
-    el.scrollTop = el.scrollHeight;
+    try {
+      const s = await invoke("get_status");
+      document.getElementById("about-version").textContent =
+        "dsh-up Desktop v" + s.appVersion + " · Tauri 2 · 独立外部工具";
+    } catch (e) { /* ignore */ }
   },
 };
 

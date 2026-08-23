@@ -1,10 +1,8 @@
 # DeepSeek Harness Up 🐋
 
-<!-- 徽章（GitHub 仓库创建后取消注释并填入真实链接）
-![CI](https://github.com/USER/deepseek-harness-up/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/github/license/USER/deepseek-harness-up)
-![Release](https://img.shields.io/github/v/release/USER/deepseek-harness-up)
--->
+![CI](https://github.com/broken-star1999/deepseek-harness-up/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/github/license/broken-star1999/deepseek-harness-up)
+![Release](https://img.shields.io/github/v/release/broken-star1999/deepseek-harness-up)
 
 > DSH 启动器 · 内嵌浏览器 · 更新/卸载管理器 —— 非插件、非侵入的外部工具
 
@@ -42,9 +40,9 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 
 | 启动器 | DSH 界面 |
 |---|---|
-| *(screenshots/launcher.png)* | *(screenshots/dsh.png)* |
+| ![启动器](screenshots/launcher.png) | ![DSH 界面](screenshots/dsh.png) |
 
-> 上传前请将截图放入 `screenshots/`（运行起来按 Win+Shift+S 截图即可）
+> 当前为占位图：运行工具后按 Win+Shift+S 截图，覆盖 `screenshots/` 下同名文件即可
 
 ## 🔨 从源码构建
 

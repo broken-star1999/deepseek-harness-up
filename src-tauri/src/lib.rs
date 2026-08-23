@@ -6,16 +6,18 @@ mod updater;
 
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{LogicalPosition, LogicalSize, Rect, State, Window};
 
 pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
+    pub embed: Mutex<Option<tauri::webview::Webview>>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         AppState {
             dsh: Mutex::new(dsh_process::DshState::default()),
+            embed: Mutex::new(None),
         }
     }
 }
@@ -166,6 +168,71 @@ fn uninstall(
     Ok(serde_json::json!({ "ok": true, "message": log }))
 }
 
+/// 内嵌显示 127.0.0.1:3080（Windows 上必须在 async command 中创建 child webview，避免死锁）
+const EMBED_LABEL: &str = "dsh-embed";
+const DSH_UI_URL: &str = "http://127.0.0.1:3080/";
+
+#[tauri::command]
+async fn show_embed(
+    window: Window,
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<serde_json::Value, String> {
+    if !dsh_process::port_open() {
+        return Err("dsh 未运行（端口 3080 未就绪）".into());
+    }
+    let mut guard = state.embed.lock().unwrap();
+    let rect = Rect {
+        position: LogicalPosition::new(x, y).into(),
+        size: LogicalSize::new(width, height).into(),
+    };
+    if let Some(wv) = guard.as_ref() {
+        // 已有内嵌：仅更新位置尺寸（窗口缩放时）
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+        return Ok(serde_json::json!({ "ok": true }));
+    }
+    let builder = tauri::webview::WebviewBuilder::new(
+        EMBED_LABEL,
+        tauri::WebviewUrl::External(DSH_UI_URL.parse().unwrap()),
+    );
+    let wv = window
+        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .map_err(|e| format!("创建内嵌视图失败: {}", e))?;
+    *guard = Some(wv);
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command]
+async fn hide_embed(state: State<'_, AppState>) -> Result<(), String> {
+    let mut guard = state.embed.lock().unwrap();
+    if let Some(wv) = guard.take() {
+        wv.close().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_embed_bounds(
+    state: State<'_, AppState>,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    let guard = state.embed.lock().unwrap();
+    if let Some(wv) = guard.as_ref() {
+        let rect = Rect {
+            position: LogicalPosition::new(x, y).into(),
+            size: LogicalSize::new(width, height).into(),
+        };
+        wv.set_bounds(rect).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
@@ -195,7 +262,10 @@ pub fn run() {
             update_dsh,
             env_check,
             env_action,
-            uninstall
+            uninstall,
+            show_embed,
+            hide_embed,
+            update_embed_bounds
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

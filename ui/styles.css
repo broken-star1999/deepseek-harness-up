@@ -44,3 +44,17 @@ body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: var(-
 .dot.ok { background: var(--green); }
 .dot.bad { background: var(--red); }
 .dot.warn { background: var(--yellow); }
+
+/* ===== 内嵌视图 ===== */
+.page-console { display: none; padding: 0 !important; height: 100%; overflow: hidden; }
+.page-console.active { display: flex; flex-direction: column; }
+#console-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--border); }
+#embed-slot { flex: 1; position: relative; min-height: 0; background: #0b0f1a; }
+#embed-slot.embedded > #embed-status { opacity: 0; pointer-events: none; transition: opacity .4s; }
+#embed-status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; opacity: 1; transition: opacity .4s; }
+#embed-status .spinner { width: 26px; height: 26px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+#embed-status.error-holder .spinner { display: none; }
+#embed-status .small { color: var(--red); font-size: 12px; max-width: 420px; text-align: center; }
+#embed-retry { display: none; }
+#embed-status.error-holder #embed-retry { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }

@@ -12,9 +12,17 @@
 
 ## 🖼 界面预览
 
-| 启动器 | DSH 界面 |
-|---|---|
-| ![启动器](screenshots/launcher.jpg) | ![DSH 界面](screenshots/dsh.png) |
+<p align="center">
+  <img src="screenshots/launcher.jpg" alt="启动器" width="720" />
+  <br />
+  <sub>启动器 · 一键启动 / 停止 / 更新 DeepSeek Harness</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/dsh.png" alt="DSH 界面" width="720" />
+  <br />
+  <sub>内嵌 WebView 显示的官方 DSH 界面</sub>
+</p>
 
 > 截图基于 v0.1.0 实际运行画面（Win11 · 自定义壁纸）
 

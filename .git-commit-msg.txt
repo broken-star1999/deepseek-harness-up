@@ -1,0 +1,7 @@
+feat: 安装过程进度反馈(npm 实时日志)
+
+- npm install/update 输出重定向 install.log
+- tail_install_log 命令(尾部800字符)
+- 安装时 busy 视图滚动显示 npm 日志(1.5s轮询)
+- 安装成功/失败 toast 提示
+- 修复新机器路径: G1 定位缓存失效 + G2 页面1 10s状态轮询

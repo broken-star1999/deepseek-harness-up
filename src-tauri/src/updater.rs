@@ -1,6 +1,23 @@
 // 版本检查（npm registry，npmmirror 优先 + 官方兜底）与 npm 更新
 use std::time::Duration;
 
+/// 安装/更新日志路径（前端进度反馈）
+fn install_log_path() -> std::path::PathBuf {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    std::path::PathBuf::from(la).join("dsh-up").join("install.log")
+}
+
+/// 记录 npm 输出到 install.log + 返回尾部文本
+fn write_install_log(out: &std::process::Output) {
+    let mut s = String::new();
+    s.push_str(&String::from_utf8_lossy(&out.stdout));
+    s.push_str(&String::from_utf8_lossy(&out.stderr));
+    if let Some(d) = install_log_path().parent() {
+        let _ = std::fs::create_dir_all(d);
+    }
+    let _ = std::fs::write(install_log_path(), s);
+}
+
 /// 读取设置(镜像等)
 fn setting(key: &str) -> Option<String> {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
@@ -77,13 +94,13 @@ pub fn update_dsh() -> Result<String, String> {
     ])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
+    write_install_log(&out);
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.chars().take(300).collect::<String>();
         return Err(format!("npm 更新失败: {}", err.trim()));
     }
-    let out = String::from_utf8_lossy(&out.stdout);
-    Ok(out.chars().take(500).collect())
+    Ok(String::from_utf8_lossy(&out.stdout).chars().take(500).collect())
 }
 
 /// 安装 dsh（体检引导用）
@@ -105,6 +122,7 @@ pub fn install_dsh() -> Result<String, String> {
     ])
         .output()
         .map_err(|e| format!("无法执行 npm: {}", e))?;
+    write_install_log(&out);
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.chars().take(300).collect::<String>();

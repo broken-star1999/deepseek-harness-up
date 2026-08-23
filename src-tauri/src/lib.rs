@@ -51,6 +51,13 @@ fn ping() -> String {
     "pong".into()
 }
 
+/// 安装/卸载后强制失效定位缓存（新机器安装 dsh 后立即生效）
+#[tauri::command]
+fn invalidate_locator_cache(state: State<AppState>) {
+    *state.locator_cache.lock().unwrap() = None;
+    log_line("locator cache invalidated");
+}
+
 #[tauri::command]
 fn get_status(state: State<AppState>) -> StatusInfo {
     // 定位缓存：10 秒内复用（Node 目录遍历很慢，避免每次 get_status 跑 5 个 cmd）
@@ -664,6 +671,20 @@ fn log_line(msg: &str) {
     }
 }
 
+/// 安装日志尾部（前端安装进度滚动显示）
+#[tauri::command]
+fn tail_install_log() -> String {
+    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let p = std::path::PathBuf::from(la).join("dsh-up").join("install.log");
+    match std::fs::read_to_string(&p) {
+        Ok(s) => {
+            let tail: String = s.chars().rev().take(800).collect::<String>().chars().rev().collect();
+            tail
+        }
+        Err(_) => String::new(),
+    }
+}
+
 /// dsh-up 自身更新检查（来源: settings["appUpdateUrl"] 的 JSON: {"version":"x.y.z"}）
 #[tauri::command]
 fn check_app_update() -> Result<serde_json::Value, String> {
@@ -992,6 +1013,8 @@ pub fn run() {
             start_drag,
             get_close_default,
             set_close_default,
+            invalidate_locator_cache,
+            tail_install_log,
             set_bg_bytes,
             get_bg,
             pick_and_set_bg,

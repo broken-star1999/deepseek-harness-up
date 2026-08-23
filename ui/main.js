@@ -65,6 +65,21 @@ const UI = {
       }
     });
 
+    // 页面1 状态轮询（10s）：环境变化（装完Node/dsh）自动刷新按钮，不闪转圈
+    setInterval(async () => {
+      if (this.embedActive) return;
+      try {
+        const s = await invoke('get_status');
+        const c = this.ctx || {};
+        const changed = c.installed !== s.installed || c.running !== s.running ||
+          c.nodeVersion !== s.nodeVersion || c.dshVersion !== s.dshVersion;
+        if (changed) {
+          this.ctx = s;
+          this.renderActions();
+        }
+      } catch (e) {}
+    }, 10000);
+
     // 页面2 心跳：核心崩溃检测（15s 间隔）
     setInterval(async () => {
       if (!this.embedActive) return;
@@ -180,20 +195,44 @@ const UI = {
     this.busy = true;
     document.getElementById('action-view').classList.add('hidden');
     document.getElementById('busy-view').classList.remove('hidden');
-    const label = kind === 'installNode' ? '正在打开 Node.js 下载页…' : '正在安装 DeepSeek Harness…';
+    const label = kind === 'installNode' ? '正在打开 Node.js 下载页…' : '正在安装 DeepSeek Harness（约 1-2 分钟）…';
     document.getElementById('busy-text').textContent = label;
+    document.getElementById('busy-log').textContent = '';
+    // 安装期间滚动 npm 日志（1.5s 间隔）
+    let logTimer = null;
+    if (kind === 'installDsh') {
+      logTimer = setInterval(async () => {
+        try {
+          const tail = await invoke('tail_install_log');
+          const el = document.getElementById('busy-log');
+          if (el && tail) { el.textContent = tail; el.scrollTop = el.scrollHeight; }
+        } catch (e) {}
+      }, 1500);
+    }
     try {
       if (kind === 'installNode') {
         await invoke('env_action', { action: 'node_download' });
       } else {
         await invoke('env_action', { action: 'install_dsh' });
+        try { await invoke('invalidate_locator_cache'); } catch (e) {}
+        if (logTimer) { clearInterval(logTimer); await this.refreshInstallLog(); }
+        this.toast('✅ DeepSeek Harness 安装成功', 'ok');
       }
     } catch (e) {
+      if (logTimer) clearInterval(logTimer);
       this.toast('操作失败: ' + e, 'warn');
     } finally {
       this.busy = false;
       await this.checkEnv();
     }
+  },
+
+  async refreshInstallLog() {
+    try {
+      const tail = await invoke('tail_install_log');
+      const el = document.getElementById('busy-log');
+      if (el && tail) { el.textContent = tail; }
+    } catch (e) {}
   },
 
   /* ========== 更新 ========== */
@@ -532,6 +571,7 @@ const UI = {
     setTimeout(async () => {
       this.closeModal();
       document.getElementById('modal-log').textContent = '';
+      try { await invoke('invalidate_locator_cache'); } catch (e) {}
       await this.checkEnv();
     }, 1200);
   },

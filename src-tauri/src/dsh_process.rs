@@ -67,6 +67,8 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
     // ，而不是各自新建可见控制台(黑窗)。--no-open 禁止自动弹浏览器。
     let mut cmd = Command::new("powershell.exe");
     cmd.arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
         .arg("-WindowStyle")
         .arg("Hidden")
         .arg("-Command")
@@ -75,6 +77,15 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
             node.replace("'", "''"),
             bin_js.replace("'", "''")
         ));
+    // 隐藏控制台方案(实测最优):
+    // dsh 内部每0.5s spawn 短命 node 子进程(<300ms);
+    // 无台方案会让每个都新建可见台(黑窗x13);
+    // 隐藏台方案让全链路继承隐藏台(终端内跑 dsh 同样不闪的机制)
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

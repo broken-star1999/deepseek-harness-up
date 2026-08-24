@@ -485,33 +485,6 @@ const UI = {
 
   async openSettings() {
     try { await invoke('show_settings_window'); } catch (e) {}
-    // 回填当前 ✕ 行为
-    invoke('get_close_default').then((v) => {
-      const val = v || 'minimize';
-      document.querySelectorAll('#modal-settings input[name="close-mode"]').forEach((r) => {
-        r.checked = r.value === val;
-      });
-    }).catch(() => {});
-    // 回填镜像
-    invoke('get_mirror').then((m) => {
-      document.querySelectorAll('#modal-settings input[name="mirror"]').forEach((r) => {
-        if (m && m.startsWith('custom:')) {
-          r.checked = r.value === 'custom';
-          document.getElementById('mirror-custom').value = m.slice(7);
-        } else {
-          r.checked = r.value === (m || 'npmmirror');
-        }
-      });
-    }).catch(() => {});
-    // 关于页信息
-    (async () => {
-      try {
-        const s = await invoke('get_status');
-        document.getElementById('about-info').textContent =
-          'DeepSeek Harness Up v' + s.appVersion + ' · Tauri 2 · dsh ' + (s.dshVersion || '未安装');
-      } catch (e) {}
-    })();
-    document.getElementById('modal-settings').classList.remove('hidden');
   },
 
   closeSettings() {

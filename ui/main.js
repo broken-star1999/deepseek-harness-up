@@ -143,11 +143,11 @@ const UI = {
     btnDsh.classList.toggle('disabled', noNode);
     const subEl = btnDsh.querySelector('.sub');
     if (subEl) subEl.textContent = noNode ? '请先安装 Node.js' : 'npm 全局安装 @deepseek-ai/dsh';
+    // ② dsh 就绪：核心启动/打开界面/卸载
+    const ready = hasNode && hasDsh;
     // 体检未就绪时显示重检入口（装完 Node 后点一下即刷新，无需重启）
     const recheckBtn = document.getElementById('btn-recheck');
     if (recheckBtn) recheckBtn.classList.toggle('hidden', ready);
-    // ② dsh 就绪：核心启动/打开界面/卸载
-    const ready = hasNode && hasDsh;
     document.getElementById('btn-core').classList.toggle('hidden', !ready);
     document.getElementById('btn-open').classList.toggle('hidden', !ready);
     document.getElementById('btn-uninstall').classList.toggle('hidden', !hasDsh);

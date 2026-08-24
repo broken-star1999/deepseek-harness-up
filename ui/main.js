@@ -53,7 +53,13 @@ const UI = {
 
     document.getElementById('btn-uninstall').onclick = () => this.openModal();
     document.getElementById('btn-node').onclick = () => this.busyAction('installNode');
-    document.getElementById('btn-dsh').onclick = () => this.busyAction('installDsh');
+    document.getElementById('btn-dsh').onclick = async () => {
+    if (this.ctx && !this.ctx.nodeVersion) {
+      this.toast('请先安装 Node.js', 'warn');
+      return;
+    }
+    this.busyAction('installDsh');
+  };
     document.getElementById('btn-core').onclick = () => {
       if (this.ctx && this.ctx.running) this.stopCore();
       else this.launch();
@@ -130,7 +136,16 @@ const UI = {
       c.dshVersion ? '版本 ' + c.dshVersion : (hasNode ? '环境就绪' : '');
     // ① 环境缺失：只显示对应安装按钮
     document.getElementById('btn-node').classList.toggle('hidden', hasNode);
-    document.getElementById('btn-dsh').classList.toggle('hidden', hasDsh);
+    const btnDsh = document.getElementById('btn-dsh');
+    btnDsh.classList.toggle('hidden', hasDsh);
+    // 无 Node 时置灰提示（仍可点，点击弹提示引导）
+    const noNode = !hasNode;
+    btnDsh.classList.toggle('disabled', noNode);
+    const subEl = btnDsh.querySelector('.sub');
+    if (subEl) subEl.textContent = noNode ? '请先安装 Node.js' : 'npm 全局安装 @deepseek-ai/dsh';
+    // 体检未就绪时显示重检入口（装完 Node 后点一下即刷新，无需重启）
+    const recheckBtn = document.getElementById('btn-recheck');
+    if (recheckBtn) recheckBtn.classList.toggle('hidden', ready);
     // ② dsh 就绪：核心启动/打开界面/卸载
     const ready = hasNode && hasDsh;
     document.getElementById('btn-core').classList.toggle('hidden', !ready);
@@ -351,7 +366,14 @@ const UI = {
       await this.fail('等待 dsh 服务超时（30s）');
       return;
     }
-    try { await this.refreshStatusOnly(); } catch (e) {}
+    try { await this.checkEnv(); } catch (e) {}
+  },
+
+  // 手动重新体检（装完 Node/WebView2 后点一下即可，无需重启工具）
+  async recheck() {
+    try { await invoke('fe_log', { msg: 'ACTION UI: recheck clicked' }); } catch (e) {}
+    this.showChecking();
+    await this.checkEnv();
   },
 
   // 打开 dsh 界面（核心已运行才可点）

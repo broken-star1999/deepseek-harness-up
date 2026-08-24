@@ -362,15 +362,23 @@ const UI = {
       return;
     }
     this.busy = true;
+    // 等核心端口就绪（启动有 2-15 秒窗口，过快点击会黑屏）
+    const portReady = await this.waitPort(15);
+    if (!portReady) {
+      this.busy = false;
+      this.toast('核心还在启动中，请稍候再试', 'warn');
+      return;
+    }
     // 进入页面 2
     document.getElementById('launcher').classList.add('hidden');
     document.getElementById('dsh-page').classList.remove('hidden');
     this.busy = false;
     await this.layoutDshPage();
-    try { await invoke('show_embed', this.embedRect()); } catch (e) {}
+    try { await invoke('show_embed', this.embedRect()); } catch (e) { await this.fail('打开失败: ' + e); return; }
     this.embedActive = true;
     this.controlsActive = true;
-    document.getElementById('dsh-loading').classList.add('hidden');
+    // 给 WebView 留一点绘制时间再隐藏加载层（避免闪黑）
+    setTimeout(() => { const l = document.getElementById('dsh-loading'); if (l) l.classList.add('hidden'); }, 450);
   },
 
   waitPort(seconds) {
@@ -379,7 +387,7 @@ const UI = {
       const timer = setInterval(async () => {
         try {
           const s = await invoke('get_status');
-          if (s.running) { clearInterval(timer); resolve(true); return; }
+          if (s.portOpen) { clearInterval(timer); resolve(true); return; }
         } catch (e) {}
         if (Date.now() - t0 > seconds * 1000) { clearInterval(timer); resolve(false); }
       }, 1000);

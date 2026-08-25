@@ -40,8 +40,10 @@ jobs:
           path: src-tauri/target/release/deepseek-harness-up.exe
           if-no-files-found: error
 
-      - name: Attach to GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ github.ref_name }}" src-tauri/target/release/deepseek-harness-up.exe checksums.txt --clobber
+      # 发布方式：本地构建后手动上传（scripts/make-release.ps1 + gh release upload）
+      # 保留以下步骤备用于未来 CI 发布，当前不自动挂接避免覆盖手工上传的产物：
+      # - name: Attach to GitHub Release
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #   run: |
+      #     gh release upload "${{ github.ref_name }}" src-tauri/target/release/deepseek-harness-up.exe checksums.txt --clobber

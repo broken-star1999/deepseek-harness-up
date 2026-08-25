@@ -982,6 +982,10 @@ fn open_url(url: &str) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 崩溃钩子：任何 panic 都写入运行日志（排障闭环）
+    std::panic::set_hook(Box::new(|info| {
+        crate::log_line(&format!("PANIC 崩溃: {}", info));
+    }));
     // ===== 单实例锁（纯 std，零插件）=====
     // 绑定 127.0.0.1:3081 作为实例锁：
     //   成功 = 唯一实例（独占端口，全生命周期持有，唤醒监听）

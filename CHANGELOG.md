@@ -2,6 +2,11 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.2] - 2026-08-26
+
+### 🔧 加固
+- 崩溃钩子：任何 panic 都会写入运行日志（PANIC 崩溃: …），排障闭环
+
 ## [0.2.1] - 2026-08-26
 
 ### 🛠 优化

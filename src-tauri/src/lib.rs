@@ -99,18 +99,22 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         "未运行".into()
     };
 
-    // 状态变化日志（核心启停/意外退出检测）
+    // 状态变化日志（核心启停/端口就绪/意外退出检测）
     {
         use std::sync::atomic::{AtomicBool, Ordering};
         static LAST: AtomicBool = AtomicBool::new(false);
+        static LAST_PORT: AtomicBool = AtomicBool::new(false);
         let cur = running;
+        let own = dsh_process::own_alive(&mut dsh);
+        let port = dsh_process::port_open();
         if cur != LAST.swap(cur, Ordering::SeqCst) {
-            let own = dsh_process::own_alive(&mut dsh);
-            let port = dsh_process::port_open();
             log_line(&format!(
                 "STATE dsh 状态变化: {} (own={} port={} installed={} dsh={:?})",
                 if cur { "运行" } else { "停止" }, own, port, loc.installed(), loc.version()
             ));
+        }
+        if port != LAST_PORT.swap(port, Ordering::SeqCst) {
+            log_line(&format!("STATE 端口 3080: {}", if port { "就绪" } else { "未监听" }));
         }
     }
     StatusInfo {
@@ -184,7 +188,12 @@ fn check_update() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn update_dsh() -> Result<serde_json::Value, String> {
-    let out = updater::update_dsh()?;
+    log_line("ACTION update_dsh: 开始更新 dsh");
+    let out = updater::update_dsh().map_err(|e| {
+        log_line(&format!("update_dsh 失败: {}", e));
+        e
+    })?;
+    log_line("update_dsh: 更新完成");
     Ok(serde_json::json!({ "ok": true, "message": format!("更新完成\n{}", out) }))
 }
 
@@ -417,7 +426,6 @@ fn cmd_version(cmd: &str) -> Option<String> {
 }
 
 /// ===== 悬浮控制（页面 2 的 ─ □ ✕）=====
-
 const CONTROLS_LABEL: &str = "dsh-controls";
 
 #[tauri::command]
@@ -484,6 +492,7 @@ async fn back_to_launcher(
     window: Window,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    log_line("back_to_launcher: 返回主页面");
     {
         let mut g = state.embed.lock().unwrap();
         if let Some(wv) = g.take() {
@@ -552,6 +561,7 @@ fn win_hide_tray(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn win_minimize(app: tauri::AppHandle) -> Result<(), String> {
+    log_line("win_minimize: window minimized");
     app.get_window("main")
         .ok_or("主窗口不存在")?
         .minimize()
@@ -568,18 +578,23 @@ fn win_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
-#[tauri::command]
-fn win_close(app: tauri::AppHandle) -> Result<(), String> {
-    log_line("win_close: app.exit(0)");
-    // 退出即停核心（与 dialog_confirm exit 分支一致：本工具管理的直接 kill；外部启动的经只读校验）
+/// 唯一退出出口：停止 dsh 核心 → 记录 → 退出。
+/// 所有退出路径（✕ 默认退出 / 弹窗确认 / 托盘菜单退出）必须经过这里，防止漏停核心。
+fn quit_app(app: &tauri::AppHandle) {
     let state = app.state::<AppState>();
     let mut dsh = state.dsh.lock().unwrap();
     match dsh_process::stop(&mut dsh) {
-        Ok(()) => log_line("win_close: dsh stopped"),
-        Err(e) => log_line(&format!("win_close: dsh stop note={}", e)),
+        Ok(()) => log_line("quit_app: dsh stopped"),
+        Err(e) => log_line(&format!("quit_app: dsh stop note={}", e)),
     }
     drop(dsh);
+    log_line("quit_app: app.exit(0)");
     app.exit(0);
+}
+
+#[tauri::command]
+fn win_close(app: tauri::AppHandle) -> Result<(), String> {
+    quit_app(&app);
     Ok(())
 }
 
@@ -646,7 +661,6 @@ async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn dialog_confirm(
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
     mode: String,
     no_remind: bool,
 ) -> Result<(), String> {
@@ -656,22 +670,15 @@ async fn dialog_confirm(
         s["close_default"] = serde_json::json!(mode);
         let dir = settings_path().parent().unwrap().to_path_buf();
         let _ = std::fs::create_dir_all(&dir);
-        let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+        if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
         log_line(&format!("dialog_confirm: saved default={}", mode));
     }
     if let Some(w) = app.get_window("confirm-dialog") {
         let _ = w.close();
     }
     if mode == "exit" {
-        // 直接退出 = 程序退出 + 结束 dsh 服务（用户需求）
-        let mut dsh = state.dsh.lock().unwrap();
-        match dsh_process::stop(&mut dsh) {
-            Ok(()) => log_line("dialog_confirm: dsh stopped (exit)"),
-            Err(e) => log_line(&format!("dialog_confirm: dsh stop note={}", e)),
-        }
-        drop(dsh);
-        log_line("dialog_confirm: app.exit(0)");
-        app.exit(0);
+        // 唯一退出出口（停核心 + 退出）
+        quit_app(&app);
     } else if let Some(main) = app.get_window("main") {
         // 隐藏到任务栏托盘：先最小化(消除任务栏按钮残留)再隐藏——与「─」一致
         let _ = main.minimize();
@@ -698,7 +705,6 @@ fn start_drag(window: Window) -> Result<(), String> {
 }
 
 /// ===== 设置存储（%LOCALAPPDATA%/dsh-up/settings.json）=====
-
 fn settings_path() -> std::path::PathBuf {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
@@ -758,7 +764,7 @@ fn check_app_update() -> Result<serde_json::Value, String> {
     let latest = latest_tag.trim_start_matches('v').to_string();
     let release_url = v.get("html_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
     // semver 比较（rc/预发布正确处理；字符串不一致时保守判定）
-    let outdated = latest != "" && updater::is_outdated(&current, &latest);
+    let outdated = !latest.is_empty() && updater::is_outdated(&current, &latest);
     log_line(&format!("check_app_update: current={} latest={} url={}", current, latest, release_url));
     Ok(serde_json::json!({
         "online": true,
@@ -791,7 +797,7 @@ fn set_mirror(mirror: String) -> Result<(), String> {
     }
     let mut s = settings_snapshot();
     s["mirror"] = serde_json::json!(mirror);
-    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
     log_line(&format!("set_mirror: {}", mirror));
     Ok(())
 }
@@ -857,7 +863,7 @@ fn pick_and_set_bg() -> Result<String, String> {
     std::fs::copy(&path, &dest).map_err(|e| format!("复制图片失败: {}", e))?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(dest.to_string_lossy().as_ref());
-    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
     log_line(&format!("set_bg: from {} -> {}", path, dest.display()));
     Ok(dest.to_string_lossy().to_string())
 }
@@ -872,7 +878,7 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     std::fs::write(&path, &data).map_err(|e| e.to_string())?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(path.to_string_lossy());
-    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
     log_line("set_bg: saved");
     Ok(path.to_string_lossy().to_string())
 }
@@ -884,7 +890,7 @@ fn reset_bg() -> Result<(), String> {
     if let Some(m) = s.as_object_mut() {
         m.remove("bg");
     }
-    let _ = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap());
+    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let custom = std::path::PathBuf::from(&la).join("dsh-up").join("bg.png");
     let _ = std::fs::remove_file(&custom);
@@ -954,17 +960,18 @@ fn set_close_default(value: String) -> Result<(), String> {
     let dir = settings_path().parent().unwrap().to_path_buf();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    log_line(&format!("set_close_default: 已保存 value={}", value));
+    Ok(())
 }
 
 /// ===== 设置存储结束 =====
-
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         crate::winutil::cmd_hidden(&["/C", "start", "", url]).spawn()
             .map_err(|e| format!("打开链接失败: {}", e))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(windows))]
     {
@@ -1027,7 +1034,7 @@ pub fn run() {
                         }
                     }
                     "quit" => {
-                        app.exit(0);
+                        quit_app(app);
                     }
                     _ => {}
                 })

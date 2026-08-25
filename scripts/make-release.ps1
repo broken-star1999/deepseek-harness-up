@@ -5,7 +5,6 @@ Set-Location "$PSScriptRoot\.."
 
 Write-Output "==> 清理运行进程"
 Get-Process "deepseek-harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process "deepseek-harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
 
 Write-Output "==> 构建 release"
 # 路径脱敏：编译期重映射本机路径，避免 exe 泄漏用户名/目录（零硬编码，任何机器通用）

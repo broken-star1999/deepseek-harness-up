@@ -48,6 +48,17 @@ fn registry_chain() -> Vec<String> {
     }
 }
 
+/// 构造 npm `--registry` 参数（与设置镜像一致：npmjs/npmmirror/custom:url，custom 去尾斜杠）
+pub fn mirror_registry_arg(mirror: Option<&str>) -> String {
+    match mirror {
+        Some("npmjs") => "--registry=https://registry.npmjs.org".to_string(),
+        Some(m) if m.starts_with("custom:") => {
+            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
+        }
+        _ => "--registry=https://registry.npmmirror.com".to_string(),
+    }
+}
+
 /// 查询 registry 最新版本；全部失败返回 Err（上层静默降级为离线）
 pub fn registry_latest() -> Result<String, String> {
     for url in registry_chain() {
@@ -77,13 +88,7 @@ pub fn is_outdated(local: &str, latest: &str) -> bool {
 
 /// 执行 npm 全局更新（走镜像设置一致的 registry，--registry 参数）
 pub fn update_dsh() -> Result<String, String> {
-    let mirror_arg = match setting("mirror").as_deref() {
-        Some("npmjs") => "--registry=https://registry.npmjs.org".to_string(),
-        Some(m) if m.starts_with("custom:") => {
-            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
-        }
-        _ => "--registry=https://registry.npmmirror.com".to_string(),
-    };
+    let mirror_arg = mirror_registry_arg(setting("mirror").as_deref());
     let out = crate::winutil::cmd_hidden(&[
         "/C",
         "npm",
@@ -105,13 +110,7 @@ pub fn update_dsh() -> Result<String, String> {
 
 /// 安装 dsh（体检引导用）
 pub fn install_dsh() -> Result<String, String> {
-    let mirror_arg = match setting("mirror").as_deref() {
-        Some("npmjs") => "--registry=https://registry.npmjs.org".to_string(),
-        Some(m) if m.starts_with("custom:") => {
-            format!("--registry={}", m.trim_start_matches("custom:").trim_end_matches('/'))
-        }
-        _ => "--registry=https://registry.npmmirror.com".to_string(),
-    };
+    let mirror_arg = mirror_registry_arg(setting("mirror").as_deref());
     let out = crate::winutil::cmd_hidden(&[
         "/C",
         "npm",

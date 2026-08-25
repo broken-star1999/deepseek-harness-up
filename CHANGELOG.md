@@ -2,6 +2,24 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.0] - 2026-08-24
+
+### ✨ 新增
+- 软件自身更新检查：内置 GitHub Releases 源，检测到新版本一键跳转下载页
+- 打开 DSH 前等待端口就绪（修复启动过快点击黑屏）
+- 新机器引导优化：无 Node 时安装按钮置灰提示 + 「↻ 重检」入口
+
+### 🐛 修复
+- 默认退出主程序时同步停止 dsh 核心
+- 移除旧设置弹窗死代码（打开设置时的 null 报错）
+- renderActions 变量声明顺序（TDZ）导致卡在检查环境
+- 启动核心后状态刷新静默失败
+
+### 🔧 构建
+- release 构建改用 thin LTO（增量重编提速）
+- 构建路径脱敏（remap-path-prefix，产物不含本机用户名）
+- GitHub Actions 供应链 pin（commit SHA）+ Release 自动校验和
+
 ## [0.1.0] - 2026-08-24
 
 ### ✨ 功能

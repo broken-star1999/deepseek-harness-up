@@ -743,36 +743,41 @@ fn tail_install_log() -> String {
     }
 }
 
-/// dsh-up 自身更新检查（来源: settings["appUpdateUrl"] 的 JSON: {"version":"x.y.z"}）
+/// dsh-up 自身更新检查（GitHub Releases API，无第三方更新源，离线静默）
 #[tauri::command]
 fn check_app_update() -> Result<serde_json::Value, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
-    let url = settings_snapshot()
-        .get("appUpdateUrl")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let Some(url) = url else {
-        return Ok(serde_json::json!({
-            "online": false,
-            "configured": false,
-            "current": current,
-        }));
-    };
-    let resp = ureq::get(&url)
+    let api = "https://api.github.com/repos/broken-star1999/deepseek-harness-up/releases/latest";
+    let resp = ureq::get(api)
         .timeout(std::time::Duration::from_secs(4))
         .call()
-        .map_err(|_| "无法连接更新源".to_string())?;
+        .map_err(|_| "无法连接 GitHub（离线或网络不可用）".to_string())?;
     let body = resp.into_string().map_err(|e| e.to_string())?;
     let v: serde_json::Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
-    let latest = v.get("version").and_then(|x| x.as_str()).unwrap_or("");
-    log_line(&format!("check_app_update: current={} latest={}", current, latest));
+    let latest_tag = v.get("tag_name").and_then(|x| x.as_str()).unwrap_or("");
+    let latest = latest_tag.trim_start_matches('v').to_string();
+    let release_url = v.get("html_url").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    // semver 比较（rc/预发布正确处理；字符串不一致时保守判定）
+    let outdated = latest != "" && updater::is_outdated(&current, &latest);
+    log_line(&format!("check_app_update: current={} latest={} url={}", current, latest, release_url));
     Ok(serde_json::json!({
         "online": true,
         "configured": true,
         "current": current,
         "latest": latest,
-        "outdated": latest != "" && current != latest,
+        "outdated": outdated,
+        "url": release_url,
     }))
+}
+
+/// 打开系统默认浏览器访问外部链接（更新下载/文档）
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("仅允许 http(s) 链接".into());
+    }
+    log_line(&format!("open_external: {}", url));
+    open_url(&url)
 }
 
 /// 设置 dsh 更新镜像（npmmirror / npmjs / custom:<url>）
@@ -1085,6 +1090,7 @@ pub fn run() {
             reset_bg,
             get_bg_data,
             check_app_update,
+            open_external,
             set_mirror,
             get_mirror,
             open_logs,

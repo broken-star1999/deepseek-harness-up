@@ -48,11 +48,22 @@ const SK = {
 
   async checkAppUpdate() {
     const info = document.getElementById('upd-app-info');
+    const dl = document.getElementById('btn-upd-app-dl');
+    if (dl) dl.classList.add('hidden');
     try {
       const u = await invoke('check_app_update');
       if (!u.configured) { info.textContent = '当前 v' + u.current + '（未配置更新源）'; return; }
-      info.textContent = '当前 v' + u.current + (u.outdated ? ' → 最新 v' + u.latest : '（已最新）');
+      if (u.outdated) {
+        info.textContent = '当前 v' + u.current + ' → 最新 v' + u.latest;
+        if (dl && u.url) { this._appUrl = u.url; dl.classList.remove('hidden'); }
+      } else {
+        info.textContent = '当前 v' + u.current + '（已最新）';
+      }
     } catch (e) { info.textContent = '离线/无法检查'; }
+  },
+
+  async downloadApp() {
+    try { await invoke('open_external', { url: this._appUrl }); } catch (e) {}
   },
 
   async pickBg() {

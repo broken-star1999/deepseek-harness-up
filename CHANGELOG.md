@@ -2,6 +2,12 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.3] - 2026-08-26
+
+### ✨ 改进
+- 软件自更新检查改为 WebView 直连（系统证书/代理自适应）：国内代理/MITM 环境下不再误报离线
+- 检查失败时自动提供「去下载」降级入口（永不绝路）
+
 ## [0.2.2] - 2026-08-26
 
 ### 🔧 加固

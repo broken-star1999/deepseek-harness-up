@@ -51,15 +51,29 @@ const SK = {
     const dl = document.getElementById('btn-upd-app-dl');
     if (dl) dl.classList.add('hidden');
     try {
-      const u = await invoke('check_app_update');
-      if (!u.configured) { info.textContent = '当前 v' + u.current + '（未配置更新源）'; return; }
-      if (u.outdated) {
-        info.textContent = '当前 v' + u.current + ' → 最新 v' + u.latest;
-        if (dl && u.url) { this._appUrl = u.url; dl.classList.remove('hidden'); }
+      // WebView fetch 自动走系统代理（与浏览器一致）
+      const resp = await fetch('https://api.github.com/repos/broken-star1999/deepseek-harness-up/releases/latest', {
+        headers: { 'Accept': 'application/vnd.github+json' }
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const j = await resp.json();
+      const latest = (j.tag_name || '').replace(/^v/, '');
+      const url = j.html_url || 'https://github.com/broken-star1999/deepseek-harness-up/releases/latest';
+      let current = '';
+      try { const s = await invoke('get_status'); current = s.appVersion || ''; } catch (e) {}
+      if (latest && current && latest !== current) {
+        info.textContent = '当前 v' + current + ' → 最新 v' + latest;
+        if (dl) { this._appUrl = url; dl.classList.remove('hidden'); }
+      } else if (latest) {
+        info.textContent = '当前 v' + latest + '（已最新）';
       } else {
-        info.textContent = '当前 v' + u.current + '（已最新）';
+        info.textContent = '无法解析版本信息';
+        if (dl) { this._appUrl = url; dl.classList.remove('hidden'); }
       }
-    } catch (e) { info.textContent = '离线/无法检查'; }
+    } catch (e) {
+      info.textContent = '无法检查（离线或被拦截）';
+      if (dl) { this._appUrl = 'https://github.com/broken-star1999/deepseek-harness-up/releases/latest'; dl.classList.remove('hidden'); }
+    }
   },
 
   async downloadApp() {

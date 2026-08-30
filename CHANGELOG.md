@@ -2,6 +2,30 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.5] - 2026-08-30
+
+### 🐛 修复
+- 返回启动器事件失效（take 后判断永远 false）——Esc 返回启动器恢复
+- 拦截系统级关闭（Alt+F4/任务栏关闭）：按设置统一退出（停核心）或隐藏托盘
+- Node 安装后重检新增常见目录兜底（%ProgramFiles%\nodejs）
+- dsh shim 定位兼容 .cmd/.bat（自定义 npm prefix 场景）
+- 主题解析 UTF-8 安全切片（多字节字符边界，防 panic）
+- 清理 main.js 旧设置弹窗死代码（IPC 契约断裂恢复）
+- 3080 打开前校验占用者身份（防打开非 dsh 服务）
+
+### ⚙️ 可靠性
+- npm 安装/更新日志改流式实时（spawn + 按行追加，前端可见实时进度）
+- 更新/安装 dsh 前检查核心运行（防文件占用失败）
+- 壁纸：10MB 限制 + MIME 魔数判断（jpg/webp 不再误报 png）
+- 设置保存统一原子写入（tmp + rename，防 JSON 损坏）
+- 卸载路径防御（拒绝盘符根/用户目录，npx 文案明确）
+
+### 🧪 质量
+- 新增单元测试：semver 版本比较 / 镜像参数映射 / 卸载路径防御
+- cargo fmt 全量格式化 + CI 扩充（fmt/clippy/test/版本一致性/IPC 契约）
+- 发布闸门：版本号一致性 + 路径泄漏扫描
+- SECURITY.md 新增；REQUIREMENTS.md 归档为历史文档
+
 ## [0.2.4] - 2026-08-26
 
 ### 🐛 安全修复

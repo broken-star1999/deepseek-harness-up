@@ -2,14 +2,22 @@
 use std::path::PathBuf;
 
 /// dsh 配置根：$DSH_HOME 优先，否则 ~/.dsh
+/// 防御：拒绝盘符根目录/用户主目录/空路径等危险删除目标
 pub fn dsh_home() -> PathBuf {
+    let user = std::env::var("USERPROFILE").unwrap_or_default();
+    let default = PathBuf::from(&user).join(".dsh");
     if let Ok(h) = std::env::var("DSH_HOME") {
-        if !h.trim().is_empty() {
-            return PathBuf::from(h.trim());
+        let t = h.trim();
+        if !t.is_empty() {
+            let s = t.replace('\\', "/");
+            let is_root = s.len() <= 3 && s.ends_with('/');
+            let is_user_home = t == user;
+            if !is_root && !is_user_home && s.len() >= 4 {
+                return PathBuf::from(t);
+            }
         }
     }
-    let user = std::env::var("USERPROFILE").unwrap_or_default();
-    PathBuf::from(user).join(".dsh")
+    default
 }
 
 /// npx 缓存目录
@@ -24,13 +32,19 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
     // 1. 卸载全局包（npm 自动清理 shim）
     let settings_file = {
         let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
+        std::path::PathBuf::from(la)
+            .join("dsh-up")
+            .join("settings.json")
     };
     let registry_arg = crate::updater::mirror_registry_arg(
         std::fs::read_to_string(settings_file)
             .ok()
             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| v.get("mirror").and_then(|x| x.as_str()).map(|s| s.to_string()))
+            .and_then(|v| {
+                v.get("mirror")
+                    .and_then(|x| x.as_str())
+                    .map(|s| s.to_string())
+            })
             .as_deref(),
     );
     let out = crate::winutil::cmd_hidden(&[
@@ -41,8 +55,8 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
         "@deepseek-ai/dsh",
         &registry_arg,
     ])
-        .output()
-        .map_err(|e| format!("无法执行 npm: {}", e))?;
+    .output()
+    .map_err(|e| format!("无法执行 npm: {}", e))?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr);
         let err = err.chars().take(300).collect::<String>();
@@ -75,4 +89,25 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
     }
 
     Ok(log)
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dsh_home_defends_dangerous_paths() {
+        // 盘符根目录 → 回退默认
+        std::env::set_var("DSH_HOME", "C:\\");
+        let h = dsh_home();
+        assert!(h.ends_with(".dsh"));
+        // 用户主目录 → 回退默认
+        std::env::set_var("DSH_HOME", std::env::var("USERPROFILE").unwrap());
+        let h2 = dsh_home();
+        assert!(h2.ends_with(".dsh"));
+        // 合法路径 → 使用
+        std::env::set_var("DSH_HOME", "C:\\custom\\dsh-conf");
+        let h3 = dsh_home();
+        assert_eq!(h3.to_string_lossy(), "C:\\custom\\dsh-conf");
+        std::env::remove_var("DSH_HOME");
+    }
 }

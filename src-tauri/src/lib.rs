@@ -110,11 +110,18 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         if cur != LAST.swap(cur, Ordering::SeqCst) {
             log_line(&format!(
                 "STATE dsh 状态变化: {} (own={} port={} installed={} dsh={:?})",
-                if cur { "运行" } else { "停止" }, own, port, loc.installed(), loc.version()
+                if cur { "运行" } else { "停止" },
+                own,
+                port,
+                loc.installed(),
+                loc.version()
             ));
         }
         if port != LAST_PORT.swap(port, Ordering::SeqCst) {
-            log_line(&format!("STATE 端口 3080: {}", if port { "就绪" } else { "未监听" }));
+            log_line(&format!(
+                "STATE 端口 3080: {}",
+                if port { "就绪" } else { "未监听" }
+            ));
         }
     }
     StatusInfo {
@@ -150,7 +157,10 @@ fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
     if !loc.installed() {
         return Err("未检测到全局 dsh，请先到体检页一键安装".into());
     }
-    let node = loc.node.clone().ok_or("未找到 node 可执行文件（请安装 Node.js）")?;
+    let node = loc
+        .node
+        .clone()
+        .ok_or("未找到 node 可执行文件（请安装 Node.js）")?;
     let bin_js = loc.bin_js.clone().ok_or("未找到 dsh 包（lib/bin.js）")?;
     let mut dsh = state.dsh.lock().unwrap();
     dsh_process::start(&mut dsh, &node, bin_js.to_str().unwrap_or_default())?;
@@ -169,9 +179,7 @@ fn stop_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
 fn check_update() -> Result<serde_json::Value, String> {
     log_line("ACTION check_update: 版本检查开始");
     let loc = dsh_locator::locate();
-    let local = loc
-        .version()
-        .ok_or("未检测到 dsh 全局包，无法比较版本")?;
+    let local = loc.version().ok_or("未检测到 dsh 全局包，无法比较版本")?;
     let latest = updater::registry_latest()?;
     let outdated = updater::is_outdated(&local, &latest);
     log_line(&format!(
@@ -208,7 +216,9 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
     match action.as_str() {
         "node_download" => {
             open_url("https://nodejs.org/en/download")?;
-            Ok(serde_json::json!({ "ok": true, "message": "已打开 Node.js 官方下载页，请下载 LTS 并安装" }))
+            Ok(
+                serde_json::json!({ "ok": true, "message": "已打开 Node.js 官方下载页，请下载 LTS 并安装" }),
+            )
         }
         "install_dsh" => {
             let out = updater::install_dsh()?;
@@ -222,16 +232,25 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
             if let Some(pid) = dsh_process::port_pid() {
                 // 与 dsh_process::stop 一致：先只读校验确实是 dsh（命令行特征），防误杀无关进程
                 if !dsh_process::is_dsh_pid(pid) {
-                    log_line(&format!("env_action: 3080 被非 dsh 进程占用 PID {}, 拒绝结束", pid));
-                    return Err(format!("端口 3080 被非 dsh 进程占用（PID {}），为安全起见不自动结束。请手动处理。", pid));
+                    log_line(&format!(
+                        "env_action: 3080 被非 dsh 进程占用 PID {}, 拒绝结束",
+                        pid
+                    ));
+                    return Err(format!(
+                        "端口 3080 被非 dsh 进程占用（PID {}），为安全起见不自动结束。请手动处理。",
+                        pid
+                    ));
                 }
-                let ok = crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false);
+                let ok =
+                    crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false);
                 if ok {
                     log_line(&format!("env_action: 已结束 dsh 进程 PID {}", pid));
-                    return Ok(serde_json::json!({ "ok": true, "message": format!("已结束占用端口 3080 的进程 PID {}", pid) }));
+                    return Ok(
+                        serde_json::json!({ "ok": true, "message": format!("已结束占用端口 3080 的进程 PID {}", pid) }),
+                    );
                 }
             }
             Err("无法结束占用进程（可能无权限），请手动处理".into())
@@ -246,7 +265,10 @@ fn uninstall(
     clear_npx: bool,
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
-    log_line(&format!("ACTION uninstall: clearConfig={} clearNpx={}", clear_config, clear_npx));
+    log_line(&format!(
+        "ACTION uninstall: clearConfig={} clearNpx={}",
+        clear_config, clear_npx
+    ));
     // 先停止 dsh：本工具管理的直接 kill；外部启动的经只读校验(dsh特征)后 taskkill
     // （修复: 外部核心占用全局包文件会导致 npm uninstall 必败）
     {
@@ -255,14 +277,15 @@ fn uninstall(
             let _ = dsh_process::stop(&mut dsh);
         } else if let Some(pid) = dsh_process::port_pid() {
             if dsh_process::is_dsh_pid(pid) {
-                let _ = crate::winutil::exe_hidden(
-                    "taskkill",
-                    &["/PID", &pid.to_string(), "/T", "/F"],
-                )
-                .output();
+                let _ =
+                    crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
+                        .output();
                 log_line(&format!("uninstall: 已清理外部 dsh PID {}", pid));
             } else {
-                log_line(&format!("uninstall: 3080 被非dsh进程占用 PID {}, 跳过清理", pid));
+                log_line(&format!(
+                    "uninstall: 3080 被非dsh进程占用 PID {}, 跳过清理",
+                    pid
+                ));
             }
         }
     }
@@ -283,9 +306,25 @@ async fn show_embed(
     width: f64,
     height: f64,
 ) -> Result<serde_json::Value, String> {
-    log_line(&format!("ACTION show_embed: rect=({:.0},{:.0} {}x{})", x, y, width, height));
+    log_line(&format!(
+        "ACTION show_embed: rect=({:.0},{:.0} {}x{})",
+        x, y, width, height
+    ));
     if !dsh_process::port_open() {
         return Err("dsh 未运行（端口 3080 未就绪）".into());
+    }
+    // 安全校验：3080 占用者必须是 dsh（防打开非 dsh 服务）
+    if let Some(pid) = dsh_process::port_pid() {
+        if !dsh_process::is_dsh_pid(pid) {
+            log_line(&format!(
+                "show_embed: 3080 被非 dsh 进程占用 PID {}, 拒绝嵌入",
+                pid
+            ));
+            return Err(format!(
+                "端口 3080 被非 dsh 进程占用（PID {}），无法打开。请手动处理。",
+                pid
+            ));
+        }
     }
     let mut guard = state.embed.lock().unwrap();
     let rect = Rect {
@@ -302,7 +341,11 @@ async fn show_embed(
         tauri::WebviewUrl::External(DSH_UI_URL.parse().unwrap()),
     );
     let wv = window
-        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .add_child(
+            builder,
+            LogicalPosition::new(x, y),
+            LogicalSize::new(width, height),
+        )
         .map_err(|e| format!("创建内嵌视图失败: {}", e))?;
     *guard = Some(wv);
     Ok(serde_json::json!({ "ok": true }))
@@ -352,9 +395,7 @@ async fn get_dsh_theme() -> Option<String> {
 }
 
 fn is_hex6(seg: &str) -> bool {
-    seg.len() >= 7
-        && seg.as_bytes()[0] == b'#'
-        && seg[1..].chars().all(|c| c.is_ascii_hexdigit())
+    seg.len() >= 7 && seg.as_bytes()[0] == b'#' && seg[1..].chars().all(|c| c.is_ascii_hexdigit())
 }
 
 fn extract_bg_hex(html: &str) -> Option<String> {
@@ -365,7 +406,12 @@ fn extract_bg_hex(html: &str) -> Option<String> {
     while let Some(pos) = lower[i..].find("background") {
         let start = i + pos;
         let look_end = (start + 140).min(lower.len());
-        let look = &lower[start..look_end];
+        // UTF-8 安全边界：若落在多字节字符中间，向左回退到字符边界（避免 panic）
+        let mut safe_end = look_end;
+        while safe_end > start && !lower.is_char_boundary(safe_end) {
+            safe_end -= 1;
+        }
+        let look = &lower[start..safe_end];
         // 该段内取第一个 #rrggbb 或 rgb() —— body 级别声明通常最先生效
         if let Some(hpos) = look.find('#') {
             let seg = &look[hpos..(hpos + 7).min(look.len())];
@@ -423,7 +469,11 @@ fn cmd_version(cmd: &str) -> Option<String> {
         .ok()?;
     let val = if out.status.success() {
         let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if s.is_empty() { None } else { Some(s) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
     } else {
         None
     };
@@ -458,7 +508,11 @@ async fn show_controls(
     )
     .transparent(true);
     let wv = window
-        .add_child(builder, LogicalPosition::new(x, y), LogicalSize::new(width, height))
+        .add_child(
+            builder,
+            LogicalPosition::new(x, y),
+            LogicalSize::new(width, height),
+        )
         .map_err(|e| format!("创建控制条失败: {}", e))?;
     *guard = Some(wv);
     Ok(serde_json::json!({ "ok": true }))
@@ -494,11 +548,10 @@ async fn update_controls_bounds(
 
 /// 回到页面 1：关闭两个子 webview，并通知主 webview 刷新状态
 #[tauri::command]
-async fn back_to_launcher(
-    window: Window,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
+async fn back_to_launcher(window: Window, state: State<'_, AppState>) -> Result<(), String> {
     log_line("back_to_launcher: 返回主页面");
+    // 必须先记录再 take（take 后 Option 为空，后判断永远 false）
+    let embed_was = state.embed.lock().unwrap().is_some();
     {
         let mut g = state.embed.lock().unwrap();
         if let Some(wv) = g.take() {
@@ -506,7 +559,6 @@ async fn back_to_launcher(
         }
     }
     // 顶栏（controls）常驻，不关闭；仅恢复启动器主体
-    let embed_was = state.embed.lock().unwrap().is_some();
     if embed_was {
         let _ = window.emit("back-to-launcher", ());
     }
@@ -532,7 +584,10 @@ async fn show_settings_window(window: Window, state: State<'_, AppState>) -> Res
         .add_child(
             builder,
             LogicalPosition::new(0.0, 0.0),
-            LogicalSize::new(inner_size.width as f64 / scale, inner_size.height as f64 / scale),
+            LogicalSize::new(
+                inner_size.width as f64 / scale,
+                inner_size.height as f64 / scale,
+            ),
         )
         .map_err(|e| format!("创建设置面板失败: {}", e))?;
     *state.settings_panel.lock().unwrap() = Some(wv);
@@ -636,10 +691,7 @@ async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
 
     // 精确居中于主窗口：物理坐标直算 + 数据日志（若仍偏，日志可一次性校正）
     if let Some(mw) = app.get_window("main") {
-        let p = mw
-            .outer_position()
-            .map(|v| (v.x, v.y))
-            .unwrap_or((0, 0));
+        let p = mw.outer_position().map(|v| (v.x, v.y)).unwrap_or((0, 0));
         let size = mw
             .outer_size()
             .map(|v| (v.width, v.height))
@@ -649,13 +701,16 @@ async fn show_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
         let cx = p.0 as f64 + size.0 as f64 / 2.0 - 190.0 * scale;
         let cy = p.1 as f64 + size.1 as f64 / 2.0 - 140.0 * scale;
         let r = win.set_position(tauri::PhysicalPosition::new(cx, cy));
-        let actual = win
-            .outer_position()
-            .map(|a| (a.x, a.y))
-            .ok();
+        let actual = win.outer_position().map(|a| (a.x, a.y)).ok();
         log_line(&format!(
             "dialog center: p={:?} size={:?} scale={} set=({:.1},{:.1}) res={:?} actual={:?}",
-            p, size, scale, cx, cy, r.map(|_| "ok"), actual
+            p,
+            size,
+            scale,
+            cx,
+            cy,
+            r.map(|_| "ok"),
+            actual
         ));
     }
     let _ = win.show();
@@ -670,13 +725,18 @@ async fn dialog_confirm(
     mode: String,
     no_remind: bool,
 ) -> Result<(), String> {
-    log_line(&format!("dialog_confirm: mode={} no_remind={}", mode, no_remind));
+    log_line(&format!(
+        "dialog_confirm: mode={} no_remind={}",
+        mode, no_remind
+    ));
     if no_remind && (mode == "exit" || mode == "minimize") {
         let mut s = settings_snapshot();
         s["close_default"] = serde_json::json!(mode);
         let dir = settings_path().parent().unwrap().to_path_buf();
         let _ = std::fs::create_dir_all(&dir);
-        if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
+        if let Err(__e) = save_settings(&s) {
+            log_line(&format!("保存设置失败: {}", __e));
+        }
         log_line(&format!("dialog_confirm: saved default={}", mode));
     }
     if let Some(w) = app.get_window("confirm-dialog") {
@@ -704,7 +764,6 @@ async fn hide_dialog_window(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-
 #[tauri::command]
 fn start_drag(window: Window) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
@@ -713,7 +772,23 @@ fn start_drag(window: Window) -> Result<(), String> {
 /// ===== 设置存储（%LOCALAPPDATA%/dsh-up/settings.json）=====
 fn settings_path() -> std::path::PathBuf {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    std::path::PathBuf::from(la).join("dsh-up").join("settings.json")
+    std::path::PathBuf::from(la)
+        .join("dsh-up")
+        .join("settings.json")
+}
+
+/// 统一设置写入：临时文件 + 原子替换（避免写入中断损坏 JSON）
+fn save_settings(s: &serde_json::Value) -> Result<(), String> {
+    let p = settings_path();
+    if let Some(d) = p.parent() {
+        std::fs::create_dir_all(d).map_err(|e| format!("创建设置目录失败: {}", e))?;
+    }
+    let tmp = p.with_file_name("settings.json.tmp");
+    std::fs::write(&tmp, serde_json::to_string_pretty(s).unwrap())
+        .map_err(|e| format!("写入设置失败: {}", e))?;
+    let _ = std::fs::remove_file(&p);
+    std::fs::rename(&tmp, &p).map_err(|e| format!("替换设置失败: {}", e))?;
+    Ok(())
 }
 
 /// 运行日志（%LOCALAPPDATA%\dsh-up\log.txt）：
@@ -736,7 +811,11 @@ fn log_line(msg: &str) {
         .map(|d| d.as_millis())
         .unwrap_or(0);
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&p)
+    {
         let _ = writeln!(f, "[{}] {}", ts, msg);
     }
 }
@@ -745,10 +824,19 @@ fn log_line(msg: &str) {
 #[tauri::command]
 fn tail_install_log() -> String {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let p = std::path::PathBuf::from(la).join("dsh-up").join("install.log");
+    let p = std::path::PathBuf::from(la)
+        .join("dsh-up")
+        .join("install.log");
     match std::fs::read_to_string(&p) {
         Ok(s) => {
-            let tail: String = s.chars().rev().take(800).collect::<String>().chars().rev().collect();
+            let tail: String = s
+                .chars()
+                .rev()
+                .take(800)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
             tail
         }
         Err(_) => String::new(),
@@ -768,15 +856,15 @@ fn open_external(url: String) -> Result<(), String> {
 /// 设置 dsh 更新镜像（npmmirror / npmjs / custom:<url>）
 #[tauri::command]
 fn set_mirror(mirror: String) -> Result<(), String> {
-    let allowed = mirror == "npmmirror"
-        || mirror == "npmjs"
-        || mirror.starts_with("custom:");
+    let allowed = mirror == "npmmirror" || mirror == "npmjs" || mirror.starts_with("custom:");
     if !allowed {
         return Err("无效镜像".into());
     }
     let mut s = settings_snapshot();
     s["mirror"] = serde_json::json!(mirror);
-    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
+    if let Err(__e) = save_settings(&s) {
+        log_line(&format!("保存设置失败: {}", __e));
+    }
     log_line(&format!("set_mirror: {}", mirror));
     Ok(())
 }
@@ -842,7 +930,9 @@ fn pick_and_set_bg() -> Result<String, String> {
     std::fs::copy(&path, &dest).map_err(|e| format!("复制图片失败: {}", e))?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(dest.to_string_lossy().as_ref());
-    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
+    if let Err(__e) = save_settings(&s) {
+        log_line(&format!("保存设置失败: {}", __e));
+    }
     log_line(&format!("set_bg: from {} -> {}", path, dest.display()));
     Ok(dest.to_string_lossy().to_string())
 }
@@ -850,6 +940,10 @@ fn pick_and_set_bg() -> Result<String, String> {
 /// 保存自定义壁纸（字节 → %LOCALAPPDATA%/dsh-up/bg.png + settings 记录）
 #[tauri::command]
 fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
+    // 壁纸大小上限 10MB（防大图占用内存/IPC）
+    if data.len() > 10 * 1024 * 1024 {
+        return Err("图片超过 10MB 上限，请选择更小的图片".into());
+    }
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let dir = std::path::PathBuf::from(&la).join("dsh-up");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -857,7 +951,9 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     std::fs::write(&path, &data).map_err(|e| e.to_string())?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(path.to_string_lossy());
-    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
+    if let Err(__e) = save_settings(&s) {
+        log_line(&format!("保存设置失败: {}", __e));
+    }
     log_line("set_bg: saved");
     Ok(path.to_string_lossy().to_string())
 }
@@ -869,7 +965,9 @@ fn reset_bg() -> Result<(), String> {
     if let Some(m) = s.as_object_mut() {
         m.remove("bg");
     }
-    if let Err(__e) = std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap()) { log_line(&format!("保存设置失败: {}", __e)); }
+    if let Err(__e) = save_settings(&s) {
+        log_line(&format!("保存设置失败: {}", __e));
+    }
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let custom = std::path::PathBuf::from(&la).join("dsh-up").join("bg.png");
     let _ = std::fs::remove_file(&custom);
@@ -888,8 +986,16 @@ fn b64_encode(data: &[u8]) -> String {
         let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | (b2 as u32);
         s.push(T[((n >> 18) & 63) as usize] as char);
         s.push(T[((n >> 12) & 63) as usize] as char);
-        s.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
-        s.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+        s.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        s.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     s
 }
@@ -903,7 +1009,14 @@ fn get_bg_data() -> Option<String> {
         .map(|s| s.to_string())?;
     let bytes = std::fs::read(&path).ok()?;
     let lower = path.to_lowercase();
-    let mime = if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+    // MIME 按文件头魔数判断（保存文件名固定 bg.png，实际格式可能是 jpg/webp）
+    let mime = if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        "image/png"
+    } else if bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF] {
+        "image/jpeg"
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
         "image/jpeg"
     } else if lower.ends_with(".webp") {
         "image/webp"
@@ -948,7 +1061,8 @@ fn set_close_default(value: String) -> Result<(), String> {
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        crate::winutil::cmd_hidden(&["/C", "start", "", url]).spawn()
+        crate::winutil::cmd_hidden(&["/C", "start", "", url])
+            .spawn()
             .map_err(|e| format!("打开链接失败: {}", e))?;
         Ok(())
     }
@@ -1085,6 +1199,27 @@ pub fn run() {
             open_logs,
             get_dsh_theme
         ])
+        .on_window_event(|window, event| {
+            // 统一拦截系统级关闭（Alt+F4/任务栏关闭等），遵循关闭行为设置
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" {
+                    let mode = settings_snapshot()
+                        .get("close_default")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("exit")
+                        .to_string();
+                    log_line(&format!("CloseRequested: mode={}", mode));
+                    if mode == "minimize" {
+                        // 隐藏到托盘（阻止关闭）
+                        let _ = window.minimize();
+                        let _ = window.hide();
+                    } else {
+                        // 按设置退出：停核心 + 退出
+                        quit_app(window.app_handle());
+                    }
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

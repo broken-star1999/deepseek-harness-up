@@ -34,7 +34,9 @@ pub fn port_open() -> bool {
 
 /// 第三层：netstat 反查 3080 监听 PID（识别外部启动的 dsh）
 pub fn port_pid() -> Option<u32> {
-    let out = crate::winutil::exe_hidden("netstat", &["-ano"]).output().ok()?;
+    let out = crate::winutil::exe_hidden("netstat", &["-ano"])
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&out.stdout);
     for line in text.lines() {
         if line.contains(&format!(":{}", DSH_PORT)) && line.contains("LISTENING") {
@@ -67,10 +69,7 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
     // - --profile web --no-open(等价 web 子命令, 官方推荐形式)
     // - 无 powershell: 实测中转层会破坏隐藏链(13次黑窗元凶)
     let mut cmd = Command::new(node);
-    cmd.arg(bin_js)
-        .arg("--profile")
-        .arg("web")
-        .arg("--no-open");
+    cmd.arg(bin_js).arg("--profile").arg("web").arg("--no-open");
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -82,7 +81,9 @@ pub fn start(state: &mut DshState, node: &str, bin_js: &str) -> Result<(), Strin
             .stderr(f)
             .stdin(Stdio::null());
     } else {
-        cmd.stdout(Stdio::null()).stderr(Stdio::null()).stdin(Stdio::null());
+        cmd.stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null());
     }
     let child = cmd.spawn().map_err(|e| format!("启动 dsh 失败: {}", e))?;
     state.child = Some(child);
@@ -95,12 +96,21 @@ pub fn is_dsh_pid(pid: u32) -> bool {
         r#"(Get-CimInstance Win32_Process -Filter "ProcessId={}").CommandLine"#,
         pid
     );
-    let out = crate::winutil::cmd_hidden(&["/C", "powershell", "-NoProfile", "-NonInteractive", "-Command", &script])
-        .output()
-        .ok();
+    let out = crate::winutil::cmd_hidden(&[
+        "/C",
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        &script,
+    ])
+    .output()
+    .ok();
     if let Some(o) = out {
         let line = String::from_utf8_lossy(&o.stdout);
-        return line.contains("deepseek-ai") || line.contains("bin.js") || line.contains("deepseek-harness");
+        return line.contains("deepseek-ai")
+            || line.contains("bin.js")
+            || line.contains("deepseek-harness");
     }
     false
 }
@@ -120,13 +130,10 @@ pub fn stop(state: &mut DshState) -> Result<(), String> {
                 pid
             ));
         }
-        let ok = crate::winutil::exe_hidden(
-            "taskkill",
-            &["/PID", &pid.to_string(), "/T", "/F"],
-        )
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        let ok = crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         if ok {
             return Ok(());
         }

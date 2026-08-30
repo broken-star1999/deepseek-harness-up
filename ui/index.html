@@ -88,7 +88,7 @@
       <h3>卸载 DeepSeek Harness</h3>
       <p class="muted">将移除全局安装的 @deepseek-ai/dsh。不勾选时用户配置完整保留。</p>
       <label class="chk"><input type="checkbox" id="chk-config" /> 同时清除用户配置（~/.dsh：profiles、会话记录）</label>
-      <label class="chk"><input type="checkbox" id="chk-npx" /> 同时清理 npx 残留缓存</label>
+      <label class="chk"><input type="checkbox" id="chk-npx" /> 同时清空全部 npx 缓存（可能影响其他工具）</label>
       <div class="modal-actions">
         <button class="btn" onclick="UI.closeModal()">取消</button>
         <button class="btn danger" onclick="UI.doUninstall()">确认卸载</button>

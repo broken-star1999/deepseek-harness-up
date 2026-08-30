@@ -18,5 +18,34 @@ jobs:
       - name: Rust check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
+      - name: Rust format check
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
+
+      - name: Rust clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
       - name: Frontend syntax check
         run: node --check ui/main.js; node --check ui/controls.js; node --check ui/modal.js; node --check ui/settings.js
+
+      - name: Version consistency check
+        shell: pwsh
+        run: |
+          $cargo = (Select-String -Path src-tauri/Cargo.toml -Pattern '^version').Line -replace '.*"([^"]+)".*','$1'
+          $conf = (Select-String -Path src-tauri/tauri.conf.json -Pattern '"version"' | Select-Object -First 1).Line -replace '.*"([^"]+)".*','$1'
+          $pkg = (Select-String -Path package.json -Pattern '"version"' | Select-Object -First 1).Line -replace '.*"([^"]+)".*','$1'
+          if ($cargo.Trim() -ne $conf.Trim() -or $cargo.Trim() -ne $pkg.Trim()) { throw "版本不一致: cargo=$cargo conf=$conf pkg=$pkg" }
+          Write-Output "版本一致: $($cargo.Trim())"
+
+      - name: IPC/DOM sanity check
+        shell: pwsh
+        run: |
+          # 前端 invoke 的名字必须在 generate_handler 中存在
+          $rs = Get-Content src-tauri/src/lib.rs -Raw
+          $invokes = (Select-String -Path ui/*.js -Pattern "invoke\('([a-z_]+)'" -AllMatches).Matches | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique
+          $missing = @()
+          foreach ($name in $invokes) { if ($rs -notmatch [regex]::Escape($name)) { $missing += $name } }
+          if ($missing.Count -gt 0) { throw "IPC 契约断裂, 后端缺失: $($missing -join ', ')" }
+          Write-Output "IPC 检查通过"

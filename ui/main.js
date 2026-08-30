@@ -208,6 +208,11 @@ const UI = {
 
   async busyAction(kind) {
     if (this.busy) return;
+    // 安装/更新 dsh 前：运行中的核心占用包文件，会失败（Windows）
+    if (kind === 'installDsh' && this.ctx && this.ctx.running) {
+      this.toast('请先停止核心再安装 dsh', 'warn');
+      return;
+    }
     this.busy = true;
     document.getElementById('action-view').classList.add('hidden');
     document.getElementById('busy-view').classList.remove('hidden');
@@ -319,6 +324,10 @@ const UI = {
   },
 
   async doUpdate() {
+    if (this.ctx && this.ctx.running) {
+      this.toast('请先停止核心再更新', 'warn');
+      return;
+    }
     const btn = document.getElementById('btn-do-update');
     const log = document.getElementById('update-log');
     btn.disabled = true;
@@ -441,105 +450,11 @@ const UI = {
 
   /* ========== 卸载弹窗 ========== */
 
-  async resetBg() {
-    try {
-      await invoke('reset_bg');
-      document.getElementById('bg-status').textContent = '默认壁纸';
-      await this.applyBg();
-      this.toast('已恢复默认壁纸', 'ok');
-    } catch (e) { this.toast('恢复失败', 'warn'); }
-  },
-
-  switchTab(name) {
-    document.querySelectorAll('#modal-settings .tab').forEach((t) => {
-      t.classList.toggle('active', t.dataset.tab === name);
-    });
-    document.querySelectorAll('#modal-settings .tab-page').forEach((p) => {
-      p.classList.toggle('active', p.id === 'tab-' + name);
-    });
-  },
-
-  async checkDshUpdate() {
-    const log = document.getElementById('upd-dsh-log');
-    const info = document.getElementById('upd-dsh-info');
-    log.textContent = '检查中…';
-    try {
-      const u = await invoke('check_update');
-      info.textContent = '当前 ' + u.local + (u.outdated ? ' → 最新 ' + u.latest : '（已最新）');
-      if (u.outdated) {
-        log.innerHTML = '发现新版本！<button class="btn small primary" onclick="UI.doUpdate()">立即更新</button>';
-      } else {
-        log.textContent = '✅ 已是最新版本';
-      }
-    } catch (e) {
-      info.textContent = '离线/无法检查';
-      log.textContent = '';
-    }
-  },
-
-  async checkAppUpdate() {
-    const info = document.getElementById('upd-app-info');
-    try {
-      const u = await invoke('check_app_update');
-      if (!u.configured) {
-        info.textContent = '当前 v' + u.current + '（未配置更新源）';
-        return;
-      }
-      info.textContent = '当前 v' + u.current + (u.outdated ? ' → 最新 v' + u.latest : '（已最新）');
-    } catch (e) {
-      info.textContent = '离线/无法检查';
-    }
-  },
-
-  async openLogs() {
-    try { await invoke('open_logs'); } catch (e) {}
-  },
-
-  async pickBg() {
-    const btn = document.getElementById('btn-pick-bg');
-    if (btn) { btn.disabled = true; btn.textContent = '选择中…'; }
-    try {
-      const path = await invoke('pick_and_set_bg');
-      if (path === 'cancelled') {
-        // 用户取消，无提示
-      } else if (path) {
-        document.getElementById('bg-status').textContent = '自定义壁纸';
-        await this.applyBg();
-        this.toast('壁纸已更新', 'ok');
-      }
-    } catch (e) {
-      this.toast('选择壁纸失败', 'warn');
-    }
-    if (btn) { btn.disabled = false; btn.textContent = '选择图片…'; }
-  },
 
   async openSettings() {
     try { await invoke('show_settings_window'); } catch (e) {}
   },
 
-  closeSettings() {
-    try { invoke('hide_settings_window'); } catch (e) {}
-  },
-
-  async saveSettings() {
-    const mode = document.querySelector('#modal-settings input[name="close-mode"]:checked');
-    if (mode) {
-      try { await invoke('set_close_default', { value: mode.value }); } catch (e) {}
-    }
-    const mirror = document.querySelector('#modal-settings input[name="mirror"]:checked');
-    if (mirror) {
-      let val = mirror.value;
-      if (val === 'custom') {
-        const url = document.getElementById('mirror-custom').value.trim();
-        if (url) val = 'custom:' + url;
-      }
-      if (val) {
-        try { await invoke('set_mirror', { mirror: val }); } catch (e) {}
-      }
-    }
-    this.toast('设置已保存', 'ok');
-    this.closeSettings();
-  },
 
   // 应用壁纸（自定义文件 or 内置默认 bg.png）
   async applyBg() {
@@ -549,10 +464,8 @@ const UI = {
       const bgData = await invoke('get_bg_data');
       if (bgData) {
         launcher.style.backgroundImage = "url('" + bgData + "')";
-        document.getElementById('bg-status').textContent = '自定义壁纸';
       } else {
         launcher.style.backgroundImage = "url('bg.png')";
-        document.getElementById('bg-status').textContent = '默认壁纸';
       }
     } catch (e) {}
   },

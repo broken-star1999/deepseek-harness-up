@@ -510,7 +510,7 @@ dependencies = [
 
 [[package]]
 name = "deepseek-harness-up"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "semver",
  "serde",

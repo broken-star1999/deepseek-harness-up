@@ -29,20 +29,42 @@ pub fn npm_global_root() -> Option<String> {
         return None;
     }
     let root = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if root.is_empty() { None } else { Some(root) }
+    if root.is_empty() {
+        None
+    } else {
+        Some(root)
+    }
 }
 
-/// 在 PATH 中查找第一个可执行文件（node / dsh）
+/// 在 PATH 中查找第一个可执行文件（node.exe / dsh.cmd 等 shim 均可）
 pub fn where_first(name: &str) -> Option<String> {
-    let out = crate::winutil::cmd_hidden(&["/C", "where", name]).output().ok()?;
+    let out = crate::winutil::cmd_hidden(&["/C", "where", name])
+        .output()
+        .ok()?;
     if !out.status.success() {
         return None;
     }
     let s = String::from_utf8_lossy(&out.stdout);
     for line in s.lines() {
         let t = line.trim();
-        if !t.is_empty() && t.to_lowercase().ends_with(".exe") {
+        let low = t.to_lowercase();
+        if !t.is_empty()
+            && (low.ends_with(".exe") || low.ends_with(".cmd") || low.ends_with(".bat"))
+        {
             return Some(t.to_string());
+        }
+    }
+    None
+}
+
+/// Node.js 常见安装目录兜底（用户在工具运行期间安装 Node 时，进程 PATH 不会自动刷新）
+pub fn node_fallback() -> Option<String> {
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(pf) = std::env::var(var) {
+            let p = std::path::PathBuf::from(pf).join("nodejs").join("node.exe");
+            if p.exists() {
+                return Some(p.to_string_lossy().to_string());
+            }
         }
     }
     None
@@ -50,14 +72,18 @@ pub fn where_first(name: &str) -> Option<String> {
 
 /// 完整定位：node + dsh 包（npm root -g 优先，其次 where dsh 所在前缀）
 pub fn locate() -> DshLocator {
-    let node = where_first("node");
+    let node = where_first("node").or_else(node_fallback);
     let npm_root = npm_global_root();
     let mut pkg_dir = npm_root
         .as_ref()
         .map(|r| PathBuf::from(r).join("@deepseek-ai").join("dsh"));
 
     // 兜底：从 dsh.cmd shim 推导（shim 位于 <prefix>\dsh.cmd → node_modules 在其上级）
-    if pkg_dir.as_ref().map(|d| !d.join("lib/bin.js").exists()).unwrap_or(true) {
+    if pkg_dir
+        .as_ref()
+        .map(|d| !d.join("lib/bin.js").exists())
+        .unwrap_or(true)
+    {
         if let Some(shim) = where_first("dsh") {
             let sp = PathBuf::from(&shim);
             if let Some(parent) = sp.parent() {
@@ -71,7 +97,11 @@ pub fn locate() -> DshLocator {
 
     let bin_js = pkg_dir.as_ref().and_then(|d| {
         let p = d.join("lib").join("bin.js");
-        if p.exists() { Some(p) } else { None }
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     });
 
     DshLocator {

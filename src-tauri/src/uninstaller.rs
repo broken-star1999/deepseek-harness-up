@@ -8,16 +8,71 @@ pub fn dsh_home() -> PathBuf {
     let default = PathBuf::from(&user).join(".dsh");
     if let Ok(h) = std::env::var("DSH_HOME") {
         let t = h.trim();
-        if !t.is_empty() {
-            let s = t.replace('\\', "/");
-            let is_root = s.len() <= 3 && s.ends_with('/');
-            let is_user_home = t == user;
-            if !is_root && !is_user_home && s.len() >= 4 {
-                return PathBuf::from(t);
-            }
+        if !t.is_empty() && dsh_home_safe(t, &user) {
+            return PathBuf::from(t);
         }
     }
     default
+}
+
+/// DSH_HOME 安全校验：绝对路径 + 非 UNC + 非盘符根 + 非用户目录及其祖先（纯字符串规范化，无文件系统依赖）
+fn dsh_home_safe(t: &str, user: &str) -> bool {
+    let norm = normalize_windows_path(t);
+    if norm.is_empty() {
+        return false;
+    }
+    // 绝对路径检查
+    let drive_ok = norm.len() >= 2 && norm.as_bytes()[1] == b':';
+    if !drive_ok {
+        return false;
+    }
+    // UNC
+    if norm.starts_with("//") || norm.starts_with("\\\\") {
+        return false;
+    }
+    // 盘符根（c: 单独出现）
+    if norm.len() <= 2 {
+        return false;
+    }
+    // 用户目录本身及其祖先（大小写无关）
+    let user_norm = normalize_windows_path(user);
+    let user_low = user_norm.to_lowercase();
+    let norm_low = norm.to_lowercase();
+    if norm_low == user_low || user_low.starts_with(&(norm_low + "/")) {
+        return false;
+    }
+    true
+}
+
+/// 纯字符串规范化：正斜杠统一 + 去 . 和 ..（不触文件系统）
+fn normalize_windows_path(p: &str) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut is_abs = false;
+    for seg in p.replace('\\', "/").split('/') {
+        match seg {
+            "" => {
+                if parts.is_empty() && !is_abs {
+                    is_abs = true;
+                }
+            }
+            "." => {}
+            ".." => {
+                if parts.len() > 1 {
+                    parts.pop();
+                }
+            }
+            other => parts.push(other.to_string()),
+        }
+    }
+    let mut out = parts.join("/");
+    if let Some(first) = parts.first() {
+        if first.len() >= 2 && first.as_bytes()[1] == b':' {
+            // 保留盘符不加前缀
+        } else {
+            out = (if is_abs { "/" } else { "" }).to_string() + &out;
+        }
+    }
+    out
 }
 
 /// npx 缓存目录
@@ -109,5 +164,21 @@ mod tests {
         let h3 = dsh_home();
         assert_eq!(h3.to_string_lossy(), "C:\\custom\\dsh-conf");
         std::env::remove_var("DSH_HOME");
+    }
+
+    #[test]
+    fn dsh_home_rejects_relative_unc_and_dotdot() {
+        let user = std::env::var("USERPROFILE").unwrap_or_default();
+        // 相对路径
+        assert!(!dsh_home_safe("relative\\path", &user));
+        // UNC
+        assert!(!dsh_home_safe("\\\\server\\share", &user));
+        // 用户目录祖先（..）
+        assert!(!dsh_home_safe(
+            &format!(r"{}\..", user.trim_end_matches('\\')),
+            &user
+        ));
+        // 合法绝对路径
+        assert!(dsh_home_safe("C:\\custom\\dsh-conf", &user));
     }
 }

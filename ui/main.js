@@ -335,13 +335,13 @@ const UI = {
     log.textContent = 'npm install -g @deepseek-ai/dsh@latest …';
     try {
       const r = await invoke('update_dsh');
-      log.innerHTML = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
+      log.textContent = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
       btn.textContent = '完成';
       this.toast('dsh 已更新，核心重启后生效', 'ok');
       this.closeUpdateModal();
       await this.checkEnv();
     } catch (e) {
-      log.innerHTML = '<span class="muted" style="color:var(--red)">失败: ' + e + '</span>';
+      log.textContent = '失败: ' + e;
       btn.disabled = false;
       btn.textContent = '重试';
     }
@@ -400,12 +400,21 @@ const UI = {
       this.toast('核心还在启动中，请稍候再试', 'warn');
       return;
     }
-    // 进入页面 2
-    document.getElementById('launcher').classList.add('hidden');
+    // 先显示 dsh 页（量取边界），嵌入成功后再隐藏启动器；失败恢复
     document.getElementById('dsh-page').classList.remove('hidden');
-    this.busy = false;
     await this.layoutDshPage();
-    try { await invoke('show_embed', this.embedRect()); } catch (e) { await this.fail('打开失败: ' + e); return; }
+    try {
+      await invoke('show_embed', this.embedRect());
+    } catch (e) {
+      // 失败恢复：隐藏 dsh 页，回到启动器（防空白卡死）
+      document.getElementById('dsh-page').classList.add('hidden');
+      const l = document.getElementById('launcher'); if (l) l.classList.remove('hidden');
+      this.busy = false;
+      await this.fail('打开失败: ' + e);
+      return;
+    }
+    this.busy = false;
+    document.getElementById('launcher').classList.add('hidden');
     this.embedActive = true;
     this.controlsActive = true;
     // 给 WebView 留一点绘制时间再隐藏加载层（避免闪黑）
@@ -484,8 +493,8 @@ const UI = {
     log.textContent = '卸载中…';
     try {
       const r = await invoke('uninstall', { clearConfig: cfg, clearNpx: npx });
-      log.innerHTML = (r.ok ? '' : '⚠ ') + (r.message || '完成');
-    } catch (e) { log.innerHTML = '<span style="color:var(--red)">失败: ' + e + '</span>'; }
+      log.textContent = (r.ok ? '' : '⚠ ') + (r.message || '完成');
+    } catch (e) { log.textContent = '失败: ' + e; }
     setTimeout(async () => {
       this.closeModal();
       document.getElementById('modal-log').textContent = '';

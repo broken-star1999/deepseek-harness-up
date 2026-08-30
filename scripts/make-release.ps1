@@ -30,13 +30,18 @@ if ($fi.FileVersion -ne $want.Trim()) { throw "版本号不一致: $($fi.FileVer
 # 2) 路径泄漏检查（本机用户名/CI runner 路径）
 $bytes = [IO.File]::ReadAllBytes("dist\deepseek-harness-up.exe")
 $text = [Text.Encoding]::ASCII.GetString($bytes)
-$users = ([regex]::Matches($text, 'C:\\Users\\')).Count
+$userPrefixes = [regex]::Matches($text, 'C:\\Users\\[A-Za-z0-9_.-]+') | ForEach-Object { $_.Value } | Sort-Object -Unique
 $reg = ([regex]::Matches($text, '\.cargo\\registry')).Count
 $ci = ([regex]::Matches($text, 'D:\\a\\')).Count
-Write-Output ("  C:\Users 出现 $users 次 | .cargo\registry $reg 处 | D:\a\ $ci 处")
-# 允许 tauri 框架编译期注入的少量 CARGO_MANIFEST_DIR 痕迹（<=3 次），大泄漏视为失败
-if ($reg -gt 0 -or $ci -gt 0 -or $users -gt 3) { throw "发布产物包含本机路径泄漏 (users=$users registry=$reg ci=$ci)" }
-Write-Output "  ✅ 版本号一致 / 路径泄漏在允许范围"
+Write-Output ("  用户名前缀: " + ($userPrefixes -join ' | '))
+Write-Output ("  .cargo\registry $reg 处 | D:\a\ $ci 处")
+# 精确白名单：仅允许本机用户名前缀（tauri 框架编译期注入 1 处 CARGO_MANIFEST_DIR 痕迹，remap 无法覆盖，已明示）
+$expected = $env:USERPROFILE
+$bad = $userPrefixes | Where-Object { $_ -ne $expected }
+if ($reg -gt 0 -or $ci -gt 0 -or $bad.Count -gt 0) {
+  throw ("发布产物包含未预期本机路径: " + (($bad + $(if ($reg -gt 0) {'.cargo\registry'} else {}) + $(if ($ci -gt 0) {'D:\a\'} else {})) -join ', '))
+}
+Write-Output ("  ✅ 路径前缀白名单通过（仅 $expected，框架痕迹已明示允许）")
 
 Write-Output "==> 提交建议"
 Write-Output "  git add -A && git commit -m 'build: release'"

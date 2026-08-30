@@ -11,6 +11,9 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Window};
 
+/// 全局操作互斥：安装/更新/卸载/启停不允许并发
+static OPERATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
     pub embed: Mutex<Option<tauri::webview::Webview>>,
@@ -135,8 +138,22 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         port_open: dsh_process::port_open(),
         update_available: false,
         latest_version: None,
-        node_version: cmd_version("node"),
-        npm_version: cmd_version("npm"),
+        node_version: loc
+            .node
+            .as_deref()
+            .and_then(|n| cmd_version_path(std::path::Path::new(n))),
+        npm_version: loc.node.as_deref().and_then(|n| {
+            let npm = std::path::Path::new(n).parent()?.join("npm.cmd");
+            if npm.exists() {
+                let out = crate::winutil::exe_hidden(&npm.to_string_lossy(), &["-v"])
+                    .output()
+                    .ok()?;
+                if out.status.success() {
+                    return Some(String::from_utf8_lossy(&out.stdout).trim().to_string());
+                }
+            }
+            None
+        }),
     }
 }
 
@@ -196,6 +213,13 @@ fn check_update() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn update_dsh() -> Result<serde_json::Value, String> {
+    if dsh_process::port_open() {
+        return Err("dsh 核心正在运行，请先停止核心再更新".into());
+    }
+    // 操作互斥：更新/安装/卸载/启停不并发
+    let _guard = OPERATION_LOCK
+        .lock()
+        .map_err(|_| "操作锁中毒".to_string())?;
     log_line("ACTION update_dsh: 开始更新 dsh");
     let out = updater::update_dsh().map_err(|e| {
         log_line(&format!("update_dsh 失败: {}", e));
@@ -313,17 +337,25 @@ async fn show_embed(
     if !dsh_process::port_open() {
         return Err("dsh 未运行（端口 3080 未就绪）".into());
     }
-    // 安全校验：3080 占用者必须是 dsh（防打开非 dsh 服务）
-    if let Some(pid) = dsh_process::port_pid() {
-        if !dsh_process::is_dsh_pid(pid) {
-            log_line(&format!(
-                "show_embed: 3080 被非 dsh 进程占用 PID {}, 拒绝嵌入",
-                pid
-            ));
-            return Err(format!(
-                "端口 3080 被非 dsh 进程占用（PID {}），无法打开。请手动处理。",
-                pid
-            ));
+    // 安全校验（fail closed）：占用者未知或非 dsh → 拒绝嵌入
+    match dsh_process::port_pid() {
+        Some(pid) => {
+            if !dsh_process::is_dsh_pid(pid) {
+                log_line(&format!(
+                    "show_embed: 3080 被非 dsh 进程占用 PID {}, 拒绝嵌入",
+                    pid
+                ));
+                return Err(format!(
+                    "端口 3080 被非 dsh 进程占用（PID {}），无法打开。请手动处理。",
+                    pid
+                ));
+            }
+        }
+        None => {
+            log_line("show_embed: 端口 3080 开放但无法确认占用者，拒绝嵌入");
+            return Err(
+                "端口 3080 开放但无法确认占用者身份，为安全起见拒绝打开。请手动处理。".into(),
+            );
         }
     }
     let mut guard = state.embed.lock().unwrap();
@@ -443,42 +475,6 @@ fn extract_bg_hex(html: &str) -> Option<String> {
         *counts.entry(c.clone()).or_insert(0) += 1;
     }
     counts.into_iter().max_by_key(|(_, n)| *n).map(|(c, _)| c)
-}
-
-fn cmd_version(cmd: &str) -> Option<String> {
-    use std::sync::Mutex as SMutex;
-    static NODE_CACHE: SMutex<Option<(u128, Option<String>)>> = SMutex::new(None);
-    static NPM_CACHE: SMutex<Option<(u128, Option<String>)>> = SMutex::new(None);
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let slot: &SMutex<Option<(u128, Option<String>)>> = if cmd == "node" {
-        &NODE_CACHE
-    } else {
-        &NPM_CACHE
-    };
-    let mut guard = slot.lock().unwrap();
-    if let Some((ts, val)) = guard.as_ref() {
-        if now - ts < 10_000 {
-            return val.clone();
-        }
-    }
-    let out = crate::winutil::cmd_hidden(&["/C", cmd, "--version"])
-        .output()
-        .ok()?;
-    let val = if out.status.success() {
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
-    } else {
-        None
-    };
-    *guard = Some((now, val.clone()));
-    val
 }
 
 /// ===== 悬浮控制（页面 2 的 ─ □ ✕）=====
@@ -777,8 +773,13 @@ fn settings_path() -> std::path::PathBuf {
         .join("settings.json")
 }
 
-/// 统一设置写入：临时文件 + 原子替换（避免写入中断损坏 JSON）
+/// 线程安全 + 原子写入锁（并发防覆盖）
+static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 统一设置写入：写唯一临时文件 → 替换（Windows std 无 REPLACE_EXISTING，
+/// 先尝试 rename；目标存在时回退 remove+rename，窗口极小且 JSON 已完整写盘）
 fn save_settings(s: &serde_json::Value) -> Result<(), String> {
+    let _guard = SETTINGS_LOCK.lock().map_err(|_| "设置锁中毒".to_string())?;
     let p = settings_path();
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("创建设置目录失败: {}", e))?;
@@ -786,9 +787,15 @@ fn save_settings(s: &serde_json::Value) -> Result<(), String> {
     let tmp = p.with_file_name("settings.json.tmp");
     std::fs::write(&tmp, serde_json::to_string_pretty(s).unwrap())
         .map_err(|e| format!("写入设置失败: {}", e))?;
-    let _ = std::fs::remove_file(&p);
-    std::fs::rename(&tmp, &p).map_err(|e| format!("替换设置失败: {}", e))?;
-    Ok(())
+    match std::fs::rename(&tmp, &p) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Windows：目标已存在时 rename 失败 → 移除后重试
+            std::fs::remove_file(&p).map_err(|e| format!("移除旧设置失败: {}", e))?;
+            std::fs::rename(&tmp, &p).map_err(|e| format!("替换设置失败: {}", e))?;
+            Ok(())
+        }
+    }
 }
 
 /// 运行日志（%LOCALAPPDATA%\dsh-up\log.txt）：
@@ -922,6 +929,18 @@ fn pick_and_set_bg() -> Result<String, String> {
     if path.is_empty() {
         return Ok("cancelled".into()); // 用户取消
     }
+    // 校验：大小 <= 10MB + PNG/JPEG/WebP 魔数（不支持的格式直接拒绝）
+    let meta = std::fs::metadata(&path).map_err(|e| format!("读取文件失败: {}", e))?;
+    if meta.len() > 10 * 1024 * 1024 {
+        return Err("图片超过 10MB 上限，请选择更小的图片".into());
+    }
+    let bytes = std::fs::read(&path).map_err(|e| format!("读取图片失败: {}", e))?;
+    let is_png = bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47];
+    let is_jpg = bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF];
+    let is_webp = bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    if !(is_png || is_jpg || is_webp) {
+        return Err("不支持的图片格式（仅支持 PNG/JPEG/WebP）".into());
+    }
     // 复制到 bg.png + 写 settings
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let dir = std::path::PathBuf::from(&la).join("dsh-up");
@@ -975,6 +994,22 @@ fn reset_bg() -> Result<(), String> {
     Ok(())
 }
 
+/// 用绝对路径执行 <exe> --version（定位链统一入口，不依赖 PATH）
+fn cmd_version_path(exe: &std::path::Path) -> Option<String> {
+    let out = crate::winutil::exe_hidden(exe.to_str()?, &["--version"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 /// 手动 base64（无 crate 依赖）
 fn b64_encode(data: &[u8]) -> String {
     const T: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1008,6 +1043,10 @@ fn get_bg_data() -> Option<String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())?;
     let bytes = std::fs::read(&path).ok()?;
+    // 二次保护：异常大文件直接拒绝
+    if bytes.len() > 20 * 1024 * 1024 {
+        return None;
+    }
     let lower = path.to_lowercase();
     // MIME 按文件头魔数判断（保存文件名固定 bg.png，实际格式可能是 jpg/webp）
     let mime = if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
@@ -1049,10 +1088,7 @@ fn set_close_default(value: String) -> Result<(), String> {
     }
     let mut s = settings_snapshot();
     s["close_default"] = serde_json::json!(value);
-    let dir = settings_path().parent().unwrap().to_path_buf();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    std::fs::write(settings_path(), serde_json::to_string_pretty(&s).unwrap())
-        .map_err(|e| e.to_string())?;
+    save_settings(&s)?;
     log_line(&format!("set_close_default: 已保存 value={}", value));
     Ok(())
 }
@@ -1200,22 +1236,32 @@ pub fn run() {
             get_dsh_theme
         ])
         .on_window_event(|window, event| {
-            // 统一拦截系统级关闭（Alt+F4/任务栏关闭等），遵循关闭行为设置
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            // 统一拦截系统级关闭（Alt+F4/任务栏关闭等）：先 prevent_close 阻断默认关闭
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
+                    api.prevent_close();
                     let mode = settings_snapshot()
                         .get("close_default")
                         .and_then(|v| v.as_str())
-                        .unwrap_or("exit")
-                        .to_string();
-                    log_line(&format!("CloseRequested: mode={}", mode));
-                    if mode == "minimize" {
-                        // 隐藏到托盘（阻止关闭）
-                        let _ = window.minimize();
-                        let _ = window.hide();
-                    } else {
-                        // 按设置退出：停核心 + 退出
-                        quit_app(window.app_handle());
+                        .map(|s| s.to_string());
+                    match mode.as_deref() {
+                        Some("minimize") => {
+                            log_line("CloseRequested: 隐藏到托盘");
+                            let _ = window.minimize();
+                            let _ = window.hide();
+                        }
+                        Some("exit") => {
+                            log_line("CloseRequested: 按设置退出");
+                            quit_app(window.app_handle());
+                        }
+                        _ => {
+                            // 未保存默认：与 ✕ 一致，弹确认窗决策
+                            log_line("CloseRequested: 未设置默认，弹确认窗");
+                            let app = window.app_handle().clone();
+                            tauri::async_runtime::spawn(async move {
+                                let _ = show_dialog_window(app).await;
+                            });
+                        }
                     }
                 }
             }

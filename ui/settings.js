@@ -32,7 +32,7 @@ const SK = {
     try {
       const u = await invoke('check_update');
       info.textContent = '当前 ' + u.local + (u.outdated ? ' → 最新 ' + u.latest : '（已最新）');
-      if (u.outdated) log.innerHTML = '发现新版本！<button class="btn small primary" onclick="SK.doUpdate()">立即更新</button>';
+      if (u.outdated) log.textContent = '发现新版本，可点击「立即更新」完成升级';
       else log.textContent = '✅ 已是最新版本';
     } catch (e) { info.textContent = '离线/无法检查'; log.textContent = ''; }
   },
@@ -42,8 +42,8 @@ const SK = {
     log.textContent = 'npm install -g @deepseek-ai/dsh@latest …';
     try {
       const r = await invoke('update_dsh');
-      log.innerHTML = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
-    } catch (e) { log.innerHTML = '失败: ' + e; }
+      log.textContent = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
+    } catch (e) { log.textContent = '失败: ' + e; }
   },
 
   async checkAppUpdate() {

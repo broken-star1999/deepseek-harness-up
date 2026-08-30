@@ -2,6 +2,25 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.6] - 2026-08-30
+
+### 🐛 修复
+- 系统关闭真正拦截：CloseRequested 使用 api.prevent_close()，Minimize=隐藏托盘 / Exit=停核心退出 / 未设置=弹确认窗（与 ✕ 一致）
+- Node/npm 版本检测改用绝对路径执行（patch 后重检立即生效）
+- 打开 DSH 失败不再白屏：失败恢复启动器界面
+- 3080 身份校验收紧（去掉裸 bin.js；占用者未知时 fail closed 拒绝）
+- 后端 dsh 更新操作加互斥锁 + 核心运行即拒绝（绕过前端也拦）
+
+### ⚙️ 可靠性
+- 壁纸校验落到实际入口 pick_and_set_bg（10MB + PNG/JPEG/WebP 魔数）+ get_bg_data 二次保护
+- 设置写入统一 save_settings + 线程锁（并发防覆盖）
+- 卸载路径规范化防御（相对/UNC/盘根/用户目录祖先，纯字符串规范化）
+- 动态内容全部 textContent（消除 innerHTML 注入面）
+
+### 🧪 质量
+- 单测 4/4（新增相对路径/UNC/..防御）
+- 发布闸门精确白名单（明示 tauri 框架 1 处痕迹，其余一律拒绝）
+
 ## [0.2.5] - 2026-08-30
 
 ### 🐛 修复

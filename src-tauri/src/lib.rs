@@ -79,7 +79,7 @@ fn get_status(state: State<AppState>) -> StatusInfo {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         if let Some((ts, cached)) = cache.as_ref() {
-            if now - ts < 10_000 {
+            if now.saturating_sub(*ts) < 10_000 {
                 cached.clone()
             } else {
                 let fresh = dsh_locator::locate();
@@ -147,17 +147,22 @@ fn get_status(state: State<AppState>) -> StatusInfo {
             .node
             .as_deref()
             .and_then(|n| cmd_version_path(std::path::Path::new(n))),
-        npm_version: loc.node.as_deref().and_then(|n| {
-            let npm = std::path::Path::new(n).parent()?.join("npm.cmd");
-            if npm.exists() {
-                let out = crate::winutil::exe_hidden(&npm.to_string_lossy(), &["-v"])
-                    .output()
-                    .ok()?;
-                if out.status.success() {
-                    return Some(String::from_utf8_lossy(&out.stdout).trim().to_string());
+        npm_version: crate::dsh_locator::npm_cmd_path().and_then(|npm| {
+            let npm = npm.to_string_lossy().into_owned();
+            // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
+            let out = crate::winutil::cmd_hidden(&["/C", &npm, "-v"])
+                .output()
+                .ok()?;
+            if out.status.success() {
+                let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value)
                 }
+            } else {
+                None
             }
-            None
         }),
     }
 }
@@ -240,7 +245,7 @@ fn env_check() -> Vec<env_check::CheckItem> {
 }
 
 #[tauri::command]
-fn env_action(action: String) -> Result<serde_json::Value, String> {
+fn env_action(action: String, state: State<AppState>) -> Result<serde_json::Value, String> {
     log_line(&format!("ACTION env_action: {}", action));
     match action.as_str() {
         "node_download" => {
@@ -259,31 +264,10 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
             Ok(serde_json::json!({ "ok": true, "message": "已打开 WebView2 官方下载页" }))
         }
         "stop_port_owner" => {
-            if let Some(pid) = dsh_process::port_pid() {
-                // 与 dsh_process::stop 一致：先只读校验确实是 dsh（命令行特征），防误杀无关进程
-                if !dsh_process::is_dsh_pid(pid) {
-                    log_line(&format!(
-                        "env_action: 3080 被非 dsh 进程占用 PID {}, 拒绝结束",
-                        pid
-                    ));
-                    return Err(format!(
-                        "端口 3080 被非 dsh 进程占用（PID {}），为安全起见不自动结束。请手动处理。",
-                        pid
-                    ));
-                }
-                let ok =
-                    crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
-                        .output()
-                        .map(|o| o.status.success())
-                        .unwrap_or(false);
-                if ok {
-                    log_line(&format!("env_action: 已结束 dsh 进程 PID {}", pid));
-                    return Ok(
-                        serde_json::json!({ "ok": true, "message": format!("已结束占用端口 3080 的进程 PID {}", pid) }),
-                    );
-                }
-            }
-            Err("无法结束占用进程（可能无权限），请手动处理".into())
+            let _guard = op_guard()?;
+            let mut dsh = state.dsh.lock().unwrap();
+            dsh_process::stop(&mut dsh)?;
+            Ok(serde_json::json!({ "ok": true, "message": "dsh 已停止" }))
         }
         other => Err(format!("未知操作: {}", other)),
     }
@@ -300,24 +284,11 @@ fn uninstall(
         "ACTION uninstall: clearConfig={} clearNpx={}",
         clear_config, clear_npx
     ));
-    // 先停止 dsh：本工具管理的直接 kill；外部启动的经只读校验(dsh特征)后 taskkill
-    // （修复: 外部核心占用全局包文件会导致 npm uninstall 必败）
+    // 先停止 dsh：只对自己启动的进程或已确认的 dsh 执行停止。
     {
         let mut dsh = state.dsh.lock().unwrap();
-        if dsh_process::own_alive(&mut dsh) {
-            let _ = dsh_process::stop(&mut dsh);
-        } else if let Some(pid) = dsh_process::port_pid() {
-            if dsh_process::is_dsh_pid(pid) {
-                let _ =
-                    crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
-                        .output();
-                log_line(&format!("uninstall: 已清理外部 dsh PID {}", pid));
-            } else {
-                log_line(&format!(
-                    "uninstall: 3080 被非dsh进程占用 PID {}, 跳过清理",
-                    pid
-                ));
-            }
+        if dsh_process::running(&mut dsh) {
+            dsh_process::stop(&mut dsh).map_err(|e| format!("卸载前停止 dsh 失败: {}", e))?;
         }
     }
     let log = uninstaller::run(clear_config, clear_npx)?;
@@ -453,12 +424,20 @@ fn extract_bg_hex(html: &str) -> Option<String> {
         let look = &lower[start..safe_end];
         // 该段内取第一个 #rrggbb 或 rgb() —— body 级别声明通常最先生效
         if let Some(hpos) = look.find('#') {
-            let seg = &look[hpos..(hpos + 7).min(look.len())];
+            let mut color_end = (hpos + 7).min(look.len());
+            while color_end > hpos && !look.is_char_boundary(color_end) {
+                color_end -= 1;
+            }
+            let seg = &look[hpos..color_end];
             if is_hex6(seg) {
                 candidates.push(seg.to_string());
             }
         } else if let Some(rpos) = look.find("rgb(") {
-            let seg = &look[rpos..(rpos + 32).min(look.len())];
+            let mut color_end = (rpos + 32).min(look.len());
+            while color_end > rpos && !look.is_char_boundary(color_end) {
+                color_end -= 1;
+            }
+            let seg = &look[rpos..color_end];
             let nums: Vec<u32> = seg[4..]
                 .split(|c: char| !c.is_ascii_digit())
                 .filter(|s| !s.is_empty())
@@ -788,29 +767,88 @@ fn settings_path() -> std::path::PathBuf {
         .join("settings.json")
 }
 
-/// 线程安全 + 原子写入锁（并发防覆盖）
+/// 设置写入锁：保护读-改-写事务，避免多个 IPC 调用互相覆盖。
 static SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static SETTINGS_TMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// 统一设置写入：写唯一临时文件 → 替换（Windows std 无 REPLACE_EXISTING，
-/// 先尝试 rename；目标存在时回退 remove+rename，窗口极小且 JSON 已完整写盘）
+fn settings_tmp_path(p: &std::path::Path) -> std::path::PathBuf {
+    use std::sync::atomic::Ordering;
+    let n = SETTINGS_TMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    p.with_file_name(format!("settings.json.{}.{}.tmp", std::process::id(), n))
+}
+
+/// 使用替换语义把临时文件移动到目标文件；Windows 上使用 MoveFileExW。
+fn replace_file(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+        };
+        let from: Vec<u16> = src.as_os_str().encode_wide().chain([0]).collect();
+        let to: Vec<u16> = dst.as_os_str().encode_wide().chain([0]).collect();
+        let ok = unsafe {
+            MoveFileExW(
+                from.as_ptr(),
+                to.as_ptr(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+            )
+        };
+        if ok == 0 {
+            return Err(format!(
+                "替换设置文件失败: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(src, dst).map_err(|e| format!("替换设置文件失败: {}", e))
+    }
+}
+
+/// 统一设置写入：唯一临时文件 → 备份旧文件 → 原子替换新文件。
 fn save_settings(s: &serde_json::Value) -> Result<(), String> {
+    use std::io::Write;
     let _guard = SETTINGS_LOCK.lock().map_err(|_| "设置锁中毒".to_string())?;
     let p = settings_path();
-    if let Some(d) = p.parent() {
-        std::fs::create_dir_all(d).map_err(|e| format!("创建设置目录失败: {}", e))?;
+    let dir = p.parent().ok_or_else(|| "设置路径没有父目录".to_string())?;
+    std::fs::create_dir_all(dir).map_err(|e| format!("创建设置目录失败: {}", e))?;
+
+    let tmp = settings_tmp_path(&p);
+    let data = serde_json::to_vec_pretty(s).map_err(|e| format!("序列化设置失败: {}", e))?;
+    let write_result = (|| -> Result<(), String> {
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)
+            .map_err(|e| format!("创建临时设置文件失败: {}", e))?;
+        f.write_all(&data)
+            .map_err(|e| format!("写入临时设置文件失败: {}", e))?;
+        f.flush()
+            .map_err(|e| format!("刷新临时设置文件失败: {}", e))?;
+        f.sync_all()
+            .map_err(|e| format!("落盘临时设置文件失败: {}", e))?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
     }
-    let tmp = p.with_file_name("settings.json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(s).unwrap())
-        .map_err(|e| format!("写入设置失败: {}", e))?;
-    match std::fs::rename(&tmp, &p) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // Windows：目标已存在时 rename 失败 → 移除后重试
-            std::fs::remove_file(&p).map_err(|e| format!("移除旧设置失败: {}", e))?;
-            std::fs::rename(&tmp, &p).map_err(|e| format!("替换设置失败: {}", e))?;
-            Ok(())
-        }
+
+    let bak = p.with_file_name("settings.json.bak");
+    if p.is_file() {
+        std::fs::copy(&p, &bak).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp);
+            format!("备份旧设置失败: {}", e)
+        })?;
     }
+    if let Err(e) = replace_file(&tmp, &p) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(())
 }
 
 /// 运行日志（%LOCALAPPDATA%\dsh-up\log.txt）：
@@ -884,9 +922,7 @@ fn set_mirror(mirror: String) -> Result<(), String> {
     }
     let mut s = settings_snapshot();
     s["mirror"] = serde_json::json!(mirror);
-    if let Err(__e) = save_settings(&s) {
-        log_line(&format!("保存设置失败: {}", __e));
-    }
+    save_settings(&s)?;
     log_line(&format!("set_mirror: {}", mirror));
     Ok(())
 }
@@ -903,7 +939,7 @@ fn get_mirror() -> Option<String> {
 fn open_logs() -> Result<(), String> {
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let dir = std::path::PathBuf::from(&la).join("dsh-up");
-    crate::winutil::cmd_hidden(&["/C", "explorer", dir.to_string_lossy().as_ref()])
+    crate::winutil::exe_hidden("explorer.exe", &[dir.to_string_lossy().as_ref()])
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -916,6 +952,7 @@ fn fe_log(msg: String) {
 }
 
 fn settings_snapshot() -> serde_json::Value {
+    let _guard = SETTINGS_LOCK.lock().ok();
     let load = |p: &std::path::Path| -> Option<serde_json::Value> {
         std::fs::read_to_string(p)
             .ok()
@@ -925,11 +962,13 @@ fn settings_snapshot() -> serde_json::Value {
     if let Some(v) = load(&p) {
         return v;
     }
-    // 主文件损坏/缺失 → 尝试 .bak 恢复
+    // 主文件损坏/缺失 → 尝试 .bak 恢复。
     let bak = p.with_file_name("settings.json.bak");
     if let Some(v) = load(&bak) {
         log_line("settings_snapshot: 主文件不可用，已从 .bak 恢复");
-        let _ = std::fs::copy(&bak, &p);
+        if let Err(e) = std::fs::copy(&bak, &p) {
+            log_line(&format!("settings_snapshot: 恢复主文件失败: {}", e));
+        }
         return v;
     }
     serde_json::json!({})
@@ -963,23 +1002,20 @@ fn pick_and_set_bg() -> Result<String, String> {
         return Err("图片超过 10MB 上限，请选择更小的图片".into());
     }
     let bytes = std::fs::read(&path).map_err(|e| format!("读取图片失败: {}", e))?;
-    let is_png = bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47];
-    let is_jpg = bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF];
-    let is_webp = bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
-    if !(is_png || is_jpg || is_webp) {
+    if detect_image_mime(&bytes).is_none() {
         return Err("不支持的图片格式（仅支持 PNG/JPEG/WebP）".into());
     }
-    // 复制到 bg.png + 写 settings
+    // 写入固定位置 bg.png + 写 settings
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let dir = std::path::PathBuf::from(&la).join("dsh-up");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("bg.png");
-    std::fs::copy(&path, &dest).map_err(|e| format!("复制图片失败: {}", e))?;
+    std::fs::write(&dest, &bytes).map_err(|e| format!("保存图片失败: {}", e))?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(dest.to_string_lossy().as_ref());
-    if let Err(__e) = save_settings(&s) {
-        log_line(&format!("保存设置失败: {}", __e));
-    }
+    save_settings(&s).inspect_err(|_| {
+        let _ = std::fs::remove_file(&dest);
+    })?;
     log_line(&format!("set_bg: from {} -> {}", path, dest.display()));
     Ok(dest.to_string_lossy().to_string())
 }
@@ -991,6 +1027,9 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     if data.len() > 10 * 1024 * 1024 {
         return Err("图片超过 10MB 上限，请选择更小的图片".into());
     }
+    if detect_image_mime(&data).is_none() {
+        return Err("不支持的图片格式（仅支持 PNG/JPEG/WebP）".into());
+    }
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let dir = std::path::PathBuf::from(&la).join("dsh-up");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -998,9 +1037,7 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     std::fs::write(&path, &data).map_err(|e| e.to_string())?;
     let mut s = settings_snapshot();
     s["bg"] = serde_json::json!(path.to_string_lossy());
-    if let Err(__e) = save_settings(&s) {
-        log_line(&format!("保存设置失败: {}", __e));
-    }
+    save_settings(&s)?;
     log_line("set_bg: saved");
     Ok(path.to_string_lossy().to_string())
 }
@@ -1012,9 +1049,7 @@ fn reset_bg() -> Result<(), String> {
     if let Some(m) = s.as_object_mut() {
         m.remove("bg");
     }
-    if let Err(__e) = save_settings(&s) {
-        log_line(&format!("保存设置失败: {}", __e));
-    }
+    save_settings(&s)?;
     let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let custom = std::path::PathBuf::from(&la).join("dsh-up").join("bg.png");
     let _ = std::fs::remove_file(&custom);
@@ -1035,6 +1070,18 @@ fn cmd_version_path(exe: &std::path::Path) -> Option<String> {
         None
     } else {
         Some(s)
+    }
+}
+
+fn detect_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
+        Some("image/png")
+    } else if bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF] {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
     }
 }
 
@@ -1076,20 +1123,18 @@ fn get_bg_data() -> Option<String> {
         return None;
     }
     let lower = path.to_lowercase();
-    // MIME 按文件头魔数判断（保存文件名固定 bg.png，实际格式可能是 jpg/webp）
-    let mime = if bytes.len() >= 4 && bytes[..4] == [0x89, 0x50, 0x4E, 0x47] {
-        "image/png"
-    } else if bytes.len() >= 3 && bytes[..3] == [0xFF, 0xD8, 0xFF] {
-        "image/jpeg"
-    } else if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
-        "image/webp"
-    } else if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
-        "image/jpeg"
-    } else if lower.ends_with(".webp") {
-        "image/webp"
-    } else {
-        "image/png"
-    };
+    // MIME 优先按文件头魔数判断；旧配置无魔数时再按扩展名兼容。
+    let mime = detect_image_mime(&bytes).or_else(|| {
+        if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {
+            Some("image/jpeg")
+        } else if lower.ends_with(".webp") {
+            Some("image/webp")
+        } else if lower.ends_with(".png") {
+            Some("image/png")
+        } else {
+            None
+        }
+    })?;
     Some(format!("data:{};base64,{}", mime, b64_encode(&bytes)))
 }
 
@@ -1125,7 +1170,7 @@ fn set_close_default(value: String) -> Result<(), String> {
 fn open_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
-        crate::winutil::cmd_hidden(&["/C", "start", "", url])
+        crate::winutil::exe_hidden("explorer.exe", &[url])
             .spawn()
             .map_err(|e| format!("打开链接失败: {}", e))?;
         Ok(())

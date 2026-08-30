@@ -14,44 +14,33 @@ pub struct CheckItem {
 }
 
 fn run_version(cmd: &str, arg: &str) -> Option<String> {
-    // 优先用绝对路径（定位链）：node.exe / npm.cmd 不在 PATH 时也能检测
-    let exe = match cmd {
-        "node" => crate::dsh_locator::locate().node?,
-        "npm" => {
-            let loc = crate::dsh_locator::locate();
-            let n = loc.node?;
-            let npm = std::path::PathBuf::from(&n).parent()?.join("npm.cmd");
-            if npm.exists() {
-                npm.to_string_lossy().into_owned()
-            } else {
-                "npm".into()
-            }
-        }
-        other => other.to_string(),
+    // 优先使用定位器返回的绝对路径，避免安装 Node 后当前进程 PATH 尚未刷新。
+    let (exe, is_batch) = match cmd {
+        "node" => (crate::dsh_locator::locate().node?, false),
+        "npm" => (
+            crate::dsh_locator::npm_cmd_path()?
+                .to_string_lossy()
+                .into_owned(),
+            true,
+        ),
+        other => (other.to_string(), false),
     };
-    use std::path::Path;
-    if Path::new(&exe).is_file()
-        && Path::new(&exe).extension().and_then(|e| e.to_str()) == Some("cmd")
-    {
-        // npm.cmd 必须经 cmd /C
-        let out = crate::winutil::cmd_hidden(&["/C", &exe, arg])
+    let out = if is_batch {
+        // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
+        crate::winutil::cmd_hidden(&["/C", &exe, arg])
             .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        return if s.is_empty() { None } else { Some(s) };
-    }
-    let out = crate::winutil::exe_hidden(&exe, &[arg]).output().ok()?;
+            .ok()?
+    } else {
+        crate::winutil::exe_hidden(&exe, &[arg]).output().ok()?
+    };
     if !out.status.success() {
         return None;
     }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
+    let value = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if value.is_empty() {
         None
     } else {
-        Some(s)
+        Some(value)
     }
 }
 

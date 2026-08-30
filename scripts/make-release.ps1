@@ -42,22 +42,24 @@ $pathPat = [regex]'C:\\Users\\[A-Za-z0-9_\-.\\ ]{4,80}'
 $pathPatCn = [regex]'C:\\Users\\[\u4e00-\u9fa5A-Za-z0-9_.\\ ]{4,80}'
 foreach ($m in $pathPat.Matches($text)) { if ($found -notcontains $m.Value) { $found += $m.Value } }
 foreach ($m in $pathPatCn.Matches($text16)) { if ($found -notcontains $m.Value) { $found += $m.Value } }
-# 精确形态校验：① 恰好等于允许串；② 允许串紧贴 single-instance（TAURI 框架注入的确切形态，已明示）
+# 精确形态校验：只允许 ① 恰好等于允许串；② 允许串紧贴 single-instance（TAURI 框架注入的确切形态，已明示）。
+# 使用成交界符确保"允许串 + 单次 single-instance"是完整命中，而非任意前缀。
 $bad = @()
 foreach ($v in $found) {
   $ok = $false
   foreach ($a in $allowed) {
-    if ($v -ieq $a) { $ok = $true; break }
-    if ($v -imatch ('^' + [regex]::Escape($a) + 'single-instance')) { $ok = $true; break }
+    $anchor = [regex]::Escape($a)
+    if ($v -imatch ('^' + $anchor + '$')) { $ok = $true; break }
+    if ($v -imatch ('^' + $anchor + 'single-instance$')) { $ok = $true; break }
   }
   if (-not $ok) { $bad += $v }
 }
 Write-Output ("  命中路径片段: " + ($found -join ' | '))
 Write-Output ("  .cargo\registry $reg 处 | D:\a\ $ci 处")
-if ($reg -gt 0 -or $ci -gt 0 -or $bad.Count -gt 0) {
+if ($reg -gt 0 -or $ci -gt 0 -or $bad.Count -gt 0 -or $found.Count -gt $allowed.Count) {
   throw ("发布产物包含未预期本机路径: " + (($bad + $(if ($reg -gt 0) {'.cargo\registry'} else {}) + $(if ($ci -gt 0) {'D:\a\'} else {})) -join ', '))
 }
-Write-Output ("  ✅ 路径白名单精确通过（允许：" + ($allowed -join '; ') + "）")
+Write-Output ("  ✅ 路径白名单精确通过；命中 " + $found.Count + " 处，均属允许串（" + ($allowed -join '; ') + "）")
 
 Write-Output "==> 提交建议"
 Write-Output "  git add -A && git commit -m 'build: release'"

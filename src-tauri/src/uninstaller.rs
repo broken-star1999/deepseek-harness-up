@@ -3,20 +3,20 @@ use std::path::PathBuf;
 
 /// dsh 配置根：$DSH_HOME 优先，否则 ~/.dsh
 /// 防御：拒绝盘符根目录/用户主目录/空路径等危险删除目标
-pub fn dsh_home() -> PathBuf {
-    let user = std::env::var("USERPROFILE").unwrap_or_default();
-    // USERPROFILE 为空时绝不回退相对路径（防止误删当前目录）
+pub fn dsh_home() -> Option<PathBuf> {
+    let user = std::env::var("USERPROFILE").ok()?;
+    // USERPROFILE 为空时不返回任何相对路径，调用方必须 fail closed。
     if user.trim().is_empty() {
-        return PathBuf::new();
+        return None;
     }
     let default = PathBuf::from(&user).join(".dsh");
     if let Ok(h) = std::env::var("DSH_HOME") {
         let t = h.trim();
         if !t.is_empty() && dsh_home_safe(t, &user) {
-            return PathBuf::from(t);
+            return Some(PathBuf::from(t));
         }
     }
-    default
+    Some(default)
 }
 
 /// DSH_HOME 安全校验：绝对路径 + 非 UNC + 非盘符根 + 非用户目录及其祖先（纯字符串规范化，无文件系统依赖）
@@ -35,7 +35,7 @@ fn dsh_home_safe(t: &str, user: &str) -> bool {
         return false;
     }
     // 盘符根（c: 单独出现）
-    if norm.len() <= 2 {
+    if norm.len() <= 2 || norm[3..].contains(':') {
         return false;
     }
     // 用户目录本身及其祖先（大小写无关）
@@ -80,9 +80,12 @@ fn normalize_windows_path(p: &str) -> String {
 }
 
 /// npx 缓存目录
-pub fn npx_cache() -> PathBuf {
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    PathBuf::from(la).join("npm-cache").join("_npx")
+pub fn npx_cache() -> Option<PathBuf> {
+    let la = std::env::var("LOCALAPPDATA").ok()?;
+    if la.trim().is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(la).join("npm-cache").join("_npx"))
 }
 
 pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
@@ -125,8 +128,16 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
 
     // 2. 清除用户配置
     if clear_config {
-        let home = dsh_home();
+        let home = dsh_home().ok_or("无法确定用户配置目录，已拒绝删除")?;
         if home.exists() {
+            let meta = std::fs::symlink_metadata(&home)
+                .map_err(|e| format!("读取 {} 失败: {}", home.display(), e))?;
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "用户配置目录是链接，为安全起见拒绝删除: {}",
+                    home.display()
+                ));
+            }
             std::fs::remove_dir_all(&home)
                 .map_err(|e| format!("删除 {} 失败: {}", home.display(), e))?;
             log.push_str(&format!("✅ 用户配置已清除: {}\n", home.display()));
@@ -137,8 +148,16 @@ pub fn run(clear_config: bool, clear_npx: bool) -> Result<String, String> {
 
     // 3. 清除 npx 缓存
     if clear_npx {
-        let npx = npx_cache();
+        let npx = npx_cache().ok_or("无法确定 npm 缓存目录，已拒绝删除")?;
         if npx.exists() {
+            let meta = std::fs::symlink_metadata(&npx)
+                .map_err(|e| format!("读取 {} 失败: {}", npx.display(), e))?;
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "npx 缓存目录是链接，为安全起见拒绝删除: {}",
+                    npx.display()
+                ));
+            }
             std::fs::remove_dir_all(&npx)
                 .map_err(|e| format!("删除 {} 失败: {}", npx.display(), e))?;
             log.push_str(&format!("✅ npx 缓存已清除: {}\n", npx.display()));
@@ -157,15 +176,15 @@ mod tests {
     fn dsh_home_defends_dangerous_paths() {
         // 盘符根目录 → 回退默认
         std::env::set_var("DSH_HOME", "C:\\");
-        let h = dsh_home();
+        let h = dsh_home().unwrap();
         assert!(h.ends_with(".dsh"));
         // 用户主目录 → 回退默认
         std::env::set_var("DSH_HOME", std::env::var("USERPROFILE").unwrap());
-        let h2 = dsh_home();
+        let h2 = dsh_home().unwrap();
         assert!(h2.ends_with(".dsh"));
         // 合法路径 → 使用
         std::env::set_var("DSH_HOME", "C:\\custom\\dsh-conf");
-        let h3 = dsh_home();
+        let h3 = dsh_home().unwrap();
         assert_eq!(h3.to_string_lossy(), "C:\\custom\\dsh-conf");
         std::env::remove_var("DSH_HOME");
     }

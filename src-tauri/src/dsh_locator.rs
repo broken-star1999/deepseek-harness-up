@@ -20,10 +20,23 @@ impl DshLocator {
     }
 }
 
-/// npm 全局 root：优先用 Node 同目录的 npm.cmd 绝对路径执行（不依赖 PATH）
+/// npm.cmd 的绝对路径：优先与 Node 同目录，其次从 PATH 解析 shim。
+pub fn npm_cmd_path() -> Option<std::path::PathBuf> {
+    if let Some(dir) = node_dir() {
+        let candidate = dir.join("npm.cmd");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    where_first("npm").map(std::path::PathBuf::from)
+}
+
+/// npm 全局 root：始终使用 npm.cmd 的绝对路径，避免依赖当前进程 PATH。
 pub fn npm_global_root() -> Option<String> {
-    let npm_cmd = node_dir()?.join("npm.cmd");
-    let out = crate::winutil::exe_hidden(&npm_cmd.to_string_lossy(), &["root", "-g"])
+    let npm_cmd = npm_cmd_path()?;
+    let npm = npm_cmd.to_string_lossy().into_owned();
+    // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
+    let out = crate::winutil::cmd_hidden(&["/C", &npm, "root", "-g"])
         .output()
         .ok()?;
     if !out.status.success() {
@@ -37,7 +50,7 @@ pub fn npm_global_root() -> Option<String> {
     }
 }
 
-/// Node 目录（绝对路径优先，其次 common 安装目录）
+/// Node 目录（绝对路径优先，其次 common 安装目录）。
 fn node_dir() -> Option<std::path::PathBuf> {
     if let Some(n) = where_first("node") {
         let p = std::path::PathBuf::from(&n);
@@ -49,7 +62,7 @@ fn node_dir() -> Option<std::path::PathBuf> {
     for var in ["ProgramFiles", "ProgramFiles(x86)"] {
         if let Ok(pf) = std::env::var(var) {
             let d = std::path::PathBuf::from(pf).join("nodejs");
-            if d.join("npm.cmd").exists() {
+            if d.join("node.exe").is_file() {
                 return Some(d);
             }
         }

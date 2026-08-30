@@ -13,17 +13,20 @@ fn install_log_path() -> std::path::PathBuf {
 fn run_npm_stream(args: &[&str]) -> Result<String, String> {
     use std::io::{BufRead, BufReader, Write};
     use std::process::Stdio;
-    let mut cmd = crate::winutil::cmd_hidden(args);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-    let mut child = cmd.spawn().map_err(|e| format!("无法执行 npm: {}", e))?;
-    if let Some(d) = install_log_path().parent() {
-        let _ = std::fs::create_dir_all(d);
+    let log_path = install_log_path();
+    if let Some(d) = log_path.parent() {
+        std::fs::create_dir_all(d).map_err(|e| format!("创建日志目录失败: {}", e))?;
     }
-    let file =
-        std::fs::File::create(install_log_path()).map_err(|e| format!("创建日志失败: {}", e))?;
+    // 先创建日志文件，再启动 npm；避免日志失败时遗留孤儿 npm 进程。
+    let file = std::fs::File::create(&log_path).map_err(|e| format!("创建日志失败: {}", e))?;
     let dup = file
         .try_clone()
-        .unwrap_or_else(|_| file.try_clone().ok().unwrap());
+        .map_err(|e| format!("复制日志句柄失败: {}", e))?;
+    let mut cmd = crate::winutil::cmd_hidden(args);
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().map_err(|e| format!("无法执行 npm: {}", e))?;
     let h1 = {
         let mut f = file;
         let so = child.stdout.take();
@@ -66,12 +69,18 @@ fn run_npm_stream(args: &[&str]) -> Result<String, String> {
             }
         })
     };
-    let status = child
-        .wait()
-        .map_err(|e| format!("等待 npm 结束失败: {}", e))?;
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(e) => {
+            let _ = child.kill();
+            let _ = h1.join();
+            let _ = h2.join();
+            return Err(format!("等待 npm 结束失败: {}", e));
+        }
+    };
     let _ = h1.join();
     let _ = h2.join();
-    let tail = std::fs::read_to_string(install_log_path()).unwrap_or_default();
+    let tail = std::fs::read_to_string(&log_path).unwrap_or_default();
     let tail = tail
         .chars()
         .rev()

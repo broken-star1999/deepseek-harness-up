@@ -28,11 +28,11 @@ const SK = {
   async checkDshUpdate() {
     const log = document.getElementById('upd-dsh-log');
     const info = document.getElementById('upd-dsh-info');
+    const doBtn = document.getElementById('btn-upd-dsh-do');
     log.textContent = '检查中…';
     try {
       const u = await invoke('check_update');
       info.textContent = '当前 ' + u.local + (u.outdated ? ' → 最新 ' + u.latest : '（已最新）');
-      const doBtn = document.getElementById('btn-upd-dsh-do');
       if (u.outdated) {
         log.textContent = '发现新版本！';
         if (doBtn) doBtn.classList.remove('hidden');
@@ -40,16 +40,29 @@ const SK = {
         log.textContent = '✅ 已是最新版本';
         if (doBtn) doBtn.classList.add('hidden');
       }
-    } catch (e) { info.textContent = '离线/无法检查'; log.textContent = ''; }
+    } catch (e) {
+      info.textContent = '离线/无法检查';
+      log.textContent = '';
+      if (doBtn) doBtn.classList.add('hidden');
+    }
   },
 
   async doUpdate() {
+    if (this.updatingDsh) return;
+    this.updatingDsh = true;
     const log = document.getElementById('upd-dsh-log');
+    const doBtn = document.getElementById('btn-upd-dsh-do');
+    if (doBtn) doBtn.disabled = true;
     log.textContent = 'npm install -g @deepseek-ai/dsh@latest …';
     try {
       const r = await invoke('update_dsh');
       log.textContent = (r.ok ? '✅ ' : '⚠ ') + (r.message || '更新完成');
+      if (doBtn) doBtn.classList.add('hidden');
     } catch (e) { log.textContent = '失败: ' + e; }
+    finally {
+      this.updatingDsh = false;
+      if (doBtn) doBtn.disabled = false;
+    }
   },
 
   async checkAppUpdate() {

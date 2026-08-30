@@ -1,6 +1,6 @@
 [package]
 name = "deepseek-harness-up"
-version = "0.2.6"
+version = "0.2.7"
 description = "DSH launcher & shell"
 authors = ["dsh-up"]
 edition = "2021"

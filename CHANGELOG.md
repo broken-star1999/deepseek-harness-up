@@ -2,6 +2,22 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.7] - 2026-08-30
+
+### 🐛 修复
+- 设置保存真正原子化：唯一临时文件 + `.bak` 备份 + Windows MoveFileExW 替换（损坏自动恢复）
+- 操作锁覆盖 start/stop/update/install/uninstall/stop_port_owner/quit，全部先锁后检查
+- Node/npm 定位链完全绝对路径：npm.cmd 经隐藏 cmd /C 执行（修复批量脚本执行失败）
+- dsh 进程身份精确匹配已定位的 `@deepseek-ai\dsh\lib\bin.js`（删除宽松 `@deepseek-ai` 兜底）
+- 卸载路径加强：拒绝 drive-relative `C:foo`、多冒号路径、UNC；用户目录/npx 目录 fail closed
+- 前端设置页“立即更新”加 busy 防重复；离线/失败隐藏按钮
+- npm 流式日志先建日志后启动子进程，wait 失败清理孤儿进程
+
+### 🔧 加固
+- 图片魔数统一检测（PNG/JPEG/WebP），picker 和 set_bg_bytes 均校验
+- 发布白名单改为 end-anchored 精确匹配并限制命中数量
+- 新增 dsh 进程身份精确匹配单测
+
 ## [0.2.6] - 2026-08-30
 
 ### 🐛 修复

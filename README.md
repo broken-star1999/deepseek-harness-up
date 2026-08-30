@@ -67,7 +67,7 @@ DeepSeek Harness Up 是一个 Windows 桌面工具：双击即用，把 DeepSeek
 ```
 1. 下载 Releases 里的 DeepSeek Harness Up.exe
 2. 双击即可（绿色便携，无安装步骤）
-3. 新机器自动引导安装 Node / dsh
+3. 新机器自动引导：一键安装 dsh；Node.js 打开官方下载页（LTS）
 ```
 
 系统要求：Windows 10/11 x64（WebView2 运行时，Win11 自带）

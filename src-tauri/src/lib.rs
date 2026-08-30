@@ -220,11 +220,17 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
         }
         "stop_port_owner" => {
             if let Some(pid) = dsh_process::port_pid() {
+                // 与 dsh_process::stop 一致：先只读校验确实是 dsh（命令行特征），防误杀无关进程
+                if !dsh_process::is_dsh_pid(pid) {
+                    log_line(&format!("env_action: 3080 被非 dsh 进程占用 PID {}, 拒绝结束", pid));
+                    return Err(format!("端口 3080 被非 dsh 进程占用（PID {}），为安全起见不自动结束。请手动处理。", pid));
+                }
                 let ok = crate::winutil::exe_hidden("taskkill", &["/PID", &pid.to_string(), "/T", "/F"])
                     .output()
                     .map(|o| o.status.success())
                     .unwrap_or(false);
                 if ok {
+                    log_line(&format!("env_action: 已结束 dsh 进程 PID {}", pid));
                     return Ok(serde_json::json!({ "ok": true, "message": format!("已结束占用端口 3080 的进程 PID {}", pid) }));
                 }
             }

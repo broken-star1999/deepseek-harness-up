@@ -2,6 +2,15 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
+## [0.2.4] - 2026-08-26
+
+### 🐛 安全修复
+- 结束 3080 占用进程前先校验进程身份（is_dsh_pid）：非 dsh 进程拒绝结束，防误杀
+- 移除过时校验和残留文件
+
+### 📝 文档
+- README：Node.js 引导措辞改为“打开官方下载页（LTS）”
+
 ## [0.2.3] - 2026-08-26
 
 ### ✨ 改进

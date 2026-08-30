@@ -32,8 +32,14 @@ const SK = {
     try {
       const u = await invoke('check_update');
       info.textContent = '当前 ' + u.local + (u.outdated ? ' → 最新 ' + u.latest : '（已最新）');
-      if (u.outdated) log.textContent = '发现新版本，可点击「立即更新」完成升级';
-      else log.textContent = '✅ 已是最新版本';
+      const doBtn = document.getElementById('btn-upd-dsh-do');
+      if (u.outdated) {
+        log.textContent = '发现新版本！';
+        if (doBtn) doBtn.classList.remove('hidden');
+      } else {
+        log.textContent = '✅ 已是最新版本';
+        if (doBtn) doBtn.classList.add('hidden');
+      }
     } catch (e) { info.textContent = '离线/无法检查'; log.textContent = ''; }
   },
 

@@ -5,6 +5,10 @@ use std::path::PathBuf;
 /// 防御：拒绝盘符根目录/用户主目录/空路径等危险删除目标
 pub fn dsh_home() -> PathBuf {
     let user = std::env::var("USERPROFILE").unwrap_or_default();
+    // USERPROFILE 为空时绝不回退相对路径（防止误删当前目录）
+    if user.trim().is_empty() {
+        return PathBuf::new();
+    }
     let default = PathBuf::from(&user).join(".dsh");
     if let Ok(h) = std::env::var("DSH_HOME") {
         let t = h.trim();
@@ -21,8 +25,8 @@ fn dsh_home_safe(t: &str, user: &str) -> bool {
     if norm.is_empty() {
         return false;
     }
-    // 绝对路径检查
-    let drive_ok = norm.len() >= 2 && norm.as_bytes()[1] == b':';
+    // 绝对路径检查：`C:/foo`（盘符后必须是分隔符，拒绝 drive-relative `C:foo` / `c:`）
+    let drive_ok = norm.len() >= 3 && norm.as_bytes()[1] == b':' && norm.as_bytes()[2] == b'/';
     if !drive_ok {
         return false;
     }
@@ -180,5 +184,11 @@ mod tests {
         ));
         // 合法绝对路径
         assert!(dsh_home_safe("C:\\custom\\dsh-conf", &user));
+        // drive-relative（C:foo）→ 拒绝
+        assert!(!dsh_home_safe("C:foo", &user));
+        // 大小写不敏感（合法路径视为安全）
+        assert!(dsh_home_safe("c:/custom/dsh-conf", &user));
+        // UNC 变体（正斜杠双斜杠）→ 拒绝
+        assert!(!dsh_home_safe("//server/share", &user));
     }
 }

@@ -381,6 +381,7 @@ const UI = {
   // 手动重新体检（装完 Node/WebView2 后点一下即可，无需重启工具）
   async recheck() {
     try { await invoke('fe_log', { msg: 'ACTION UI: recheck clicked' }); } catch (e) {}
+    try { await invoke('invalidate_locator_cache'); } catch (e) {}
     this.showChecking();
     await this.checkEnv();
   },

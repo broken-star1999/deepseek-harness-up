@@ -20,9 +20,10 @@ impl DshLocator {
     }
 }
 
-/// npm 全局 root（例: C:\Users\xxx\AppData\Roaming\npm）
+/// npm 全局 root：优先用 Node 同目录的 npm.cmd 绝对路径执行（不依赖 PATH）
 pub fn npm_global_root() -> Option<String> {
-    let out = crate::winutil::cmd_hidden(&["/C", "npm", "root", "-g"])
+    let npm_cmd = node_dir()?.join("npm.cmd");
+    let out = crate::winutil::exe_hidden(&npm_cmd.to_string_lossy(), &["root", "-g"])
         .output()
         .ok()?;
     if !out.status.success() {
@@ -34,6 +35,26 @@ pub fn npm_global_root() -> Option<String> {
     } else {
         Some(root)
     }
+}
+
+/// Node 目录（绝对路径优先，其次 common 安装目录）
+fn node_dir() -> Option<std::path::PathBuf> {
+    if let Some(n) = where_first("node") {
+        let p = std::path::PathBuf::from(&n);
+        if let Some(d) = p.parent() {
+            return Some(d.to_path_buf());
+        }
+    }
+    // 兜底：node_fallback 的安装目录
+    for var in ["ProgramFiles", "ProgramFiles(x86)"] {
+        if let Ok(pf) = std::env::var(var) {
+            let d = std::path::PathBuf::from(pf).join("nodejs");
+            if d.join("npm.cmd").exists() {
+                return Some(d);
+            }
+        }
+    }
+    None
 }
 
 /// 在 PATH 中查找第一个可执行文件（node.exe / dsh.cmd 等 shim 均可）

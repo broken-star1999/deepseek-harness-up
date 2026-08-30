@@ -14,6 +14,11 @@ use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, Rect, State, Window}
 /// 全局操作互斥：安装/更新/卸载/启停不允许并发
 static OPERATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// 获取操作锁（先锁后检查，防竞态窗口）
+fn op_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    OPERATION_LOCK.lock().map_err(|_| "操作锁中毒".to_string())
+}
+
 pub struct AppState {
     pub dsh: Mutex<dsh_process::DshState>,
     pub embed: Mutex<Option<tauri::webview::Webview>>,
@@ -159,6 +164,7 @@ fn get_status(state: State<AppState>) -> StatusInfo {
 
 #[tauri::command]
 fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let _guard = op_guard()?;
     log_line("ACTION start_dsh: 请求启动核心");
     // 强制刷新定位缓存（安装后立即启动场景）
     {
@@ -186,6 +192,7 @@ fn start_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn stop_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
+    let _guard = op_guard()?;
     log_line("ACTION stop_dsh: 请求停止核心");
     let mut dsh = state.dsh.lock().unwrap();
     dsh_process::stop(&mut dsh)?;
@@ -213,13 +220,11 @@ fn check_update() -> Result<serde_json::Value, String> {
 
 #[tauri::command]
 fn update_dsh() -> Result<serde_json::Value, String> {
+    // 先锁后检查（防检查-执行竞态）
+    let _guard = op_guard()?;
     if dsh_process::port_open() {
         return Err("dsh 核心正在运行，请先停止核心再更新".into());
     }
-    // 操作互斥：更新/安装/卸载/启停不并发
-    let _guard = OPERATION_LOCK
-        .lock()
-        .map_err(|_| "操作锁中毒".to_string())?;
     log_line("ACTION update_dsh: 开始更新 dsh");
     let out = updater::update_dsh().map_err(|e| {
         log_line(&format!("update_dsh 失败: {}", e));
@@ -245,6 +250,7 @@ fn env_action(action: String) -> Result<serde_json::Value, String> {
             )
         }
         "install_dsh" => {
+            let _guard = op_guard()?;
             let out = updater::install_dsh()?;
             Ok(serde_json::json!({ "ok": true, "message": format!("安装成功\n{}", out) }))
         }
@@ -289,6 +295,7 @@ fn uninstall(
     clear_npx: bool,
     state: State<AppState>,
 ) -> Result<serde_json::Value, String> {
+    let _guard = op_guard()?;
     log_line(&format!(
         "ACTION uninstall: clearConfig={} clearNpx={}",
         clear_config, clear_npx
@@ -638,15 +645,22 @@ fn win_toggle_maximize(app: tauri::AppHandle) -> Result<(), String> {
 /// 唯一退出出口：停止 dsh 核心 → 记录 → 退出。
 /// 所有退出路径（✕ 默认退出 / 弹窗确认 / 托盘菜单退出）必须经过这里，防止漏停核心。
 fn quit_app(app: &tauri::AppHandle) {
-    let state = app.state::<AppState>();
-    let mut dsh = state.dsh.lock().unwrap();
-    match dsh_process::stop(&mut dsh) {
-        Ok(()) => log_line("quit_app: dsh stopped"),
-        Err(e) => log_line(&format!("quit_app: dsh stop note={}", e)),
+    // 退出也走操作锁（停核心与启停/更新不并发）
+    if let Ok(_guard) = op_guard() {
+        let state = app.state::<AppState>();
+        let mut dsh = state.dsh.lock().unwrap();
+        match dsh_process::stop(&mut dsh) {
+            Ok(()) => log_line("quit_app: dsh stopped"),
+            Err(e) => log_line(&format!("quit_app: dsh stop note={}", e)),
+        }
+        drop(dsh);
+        log_line("quit_app: app.exit(0)");
+        app.exit(0);
+    } else {
+        // 锁异常时至少保证退出（不阻塞用户关闭）
+        log_line("quit_app: 操作锁未获取，直接退出");
+        app.exit(0);
     }
-    drop(dsh);
-    log_line("quit_app: app.exit(0)");
-    app.exit(0);
 }
 
 #[tauri::command]
@@ -730,9 +744,10 @@ async fn dialog_confirm(
         s["close_default"] = serde_json::json!(mode);
         let dir = settings_path().parent().unwrap().to_path_buf();
         let _ = std::fs::create_dir_all(&dir);
-        if let Err(__e) = save_settings(&s) {
+        save_settings(&s).map_err(|__e| {
             log_line(&format!("保存设置失败: {}", __e));
-        }
+            __e
+        })?;
         log_line(&format!("dialog_confirm: saved default={}", mode));
     }
     if let Some(w) = app.get_window("confirm-dialog") {
@@ -901,10 +916,23 @@ fn fe_log(msg: String) {
 }
 
 fn settings_snapshot() -> serde_json::Value {
-    std::fs::read_to_string(settings_path())
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_else(|| serde_json::json!({}))
+    let load = |p: &std::path::Path| -> Option<serde_json::Value> {
+        std::fs::read_to_string(p)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    };
+    let p = settings_path();
+    if let Some(v) = load(&p) {
+        return v;
+    }
+    // 主文件损坏/缺失 → 尝试 .bak 恢复
+    let bak = p.with_file_name("settings.json.bak");
+    if let Some(v) = load(&bak) {
+        log_line("settings_snapshot: 主文件不可用，已从 .bak 恢复");
+        let _ = std::fs::copy(&bak, &p);
+        return v;
+    }
+    serde_json::json!({})
 }
 
 /// 系统文件选择对话框选壁纸（PowerShell OpenFileDialog，独立窗口）

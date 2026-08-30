@@ -14,10 +14,36 @@ pub struct CheckItem {
 }
 
 fn run_version(cmd: &str, arg: &str) -> Option<String> {
-    // 通过 cmd /C 执行(node.exe 无窗口; npm.cmd 批处理必须经 cmd, 隐藏窗口)
-    let out = crate::winutil::cmd_hidden(&["/C", cmd, arg])
-        .output()
-        .ok()?;
+    // 优先用绝对路径（定位链）：node.exe / npm.cmd 不在 PATH 时也能检测
+    let exe = match cmd {
+        "node" => crate::dsh_locator::locate().node?,
+        "npm" => {
+            let loc = crate::dsh_locator::locate();
+            let n = loc.node?;
+            let npm = std::path::PathBuf::from(&n).parent()?.join("npm.cmd");
+            if npm.exists() {
+                npm.to_string_lossy().into_owned()
+            } else {
+                "npm".into()
+            }
+        }
+        other => other.to_string(),
+    };
+    use std::path::Path;
+    if Path::new(&exe).is_file()
+        && Path::new(&exe).extension().and_then(|e| e.to_str()) == Some("cmd")
+    {
+        // npm.cmd 必须经 cmd /C
+        let out = crate::winutil::cmd_hidden(&["/C", &exe, arg])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        return if s.is_empty() { None } else { Some(s) };
+    }
+    let out = crate::winutil::exe_hidden(&exe, &[arg]).output().ok()?;
     if !out.status.success() {
         return None;
     }

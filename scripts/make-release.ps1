@@ -30,18 +30,34 @@ if ($fi.FileVersion -ne $want.Trim()) { throw "版本号不一致: $($fi.FileVer
 # 2) 路径泄漏检查（本机用户名/CI runner 路径）
 $bytes = [IO.File]::ReadAllBytes("dist\deepseek-harness-up.exe")
 $text = [Text.Encoding]::ASCII.GetString($bytes)
-$userPrefixes = [regex]::Matches($text, 'C:\\Users\\[A-Za-z0-9_.-]+') | ForEach-Object { $_.Value } | Sort-Object -Unique
+# ASCII + UTF-16 双解码扫描（中文用户名也不会漏）
+$text16 = [Text.Encoding]::Unicode.GetString($bytes)
 $reg = ([regex]::Matches($text, '\.cargo\\registry')).Count
 $ci = ([regex]::Matches($text, 'D:\\a\\')).Count
-Write-Output ("  用户名前缀: " + ($userPrefixes -join ' | '))
+# 白名单：唯一允许的完整路径 = tauri 框架编译期注入的 CARGO_MANIFEST_DIR 痕迹（remap 无法覆盖，已明示）
+$allowed = @($env:USERPROFILE + '\Desktop\deepseek-harness-up\src-tauri')
+$found = @()
+# ASCII 路径字符 + UTF-16 中文用户名支持
+$pathPat = [regex]'C:\\Users\\[A-Za-z0-9_\-.\\ ]{4,80}'
+$pathPatCn = [regex]'C:\\Users\\[\u4e00-\u9fa5A-Za-z0-9_.\\ ]{4,80}'
+foreach ($m in $pathPat.Matches($text)) { if ($found -notcontains $m.Value) { $found += $m.Value } }
+foreach ($m in $pathPatCn.Matches($text16)) { if ($found -notcontains $m.Value) { $found += $m.Value } }
+# 精确形态校验：① 恰好等于允许串；② 允许串紧贴 single-instance（TAURI 框架注入的确切形态，已明示）
+$bad = @()
+foreach ($v in $found) {
+  $ok = $false
+  foreach ($a in $allowed) {
+    if ($v -ieq $a) { $ok = $true; break }
+    if ($v -imatch ('^' + [regex]::Escape($a) + 'single-instance')) { $ok = $true; break }
+  }
+  if (-not $ok) { $bad += $v }
+}
+Write-Output ("  命中路径片段: " + ($found -join ' | '))
 Write-Output ("  .cargo\registry $reg 处 | D:\a\ $ci 处")
-# 精确白名单：仅允许本机用户名前缀（tauri 框架编译期注入 1 处 CARGO_MANIFEST_DIR 痕迹，remap 无法覆盖，已明示）
-$expected = $env:USERPROFILE
-$bad = $userPrefixes | Where-Object { $_ -ne $expected }
 if ($reg -gt 0 -or $ci -gt 0 -or $bad.Count -gt 0) {
   throw ("发布产物包含未预期本机路径: " + (($bad + $(if ($reg -gt 0) {'.cargo\registry'} else {}) + $(if ($ci -gt 0) {'D:\a\'} else {})) -join ', '))
 }
-Write-Output ("  ✅ 路径前缀白名单通过（仅 $expected，框架痕迹已明示允许）")
+Write-Output ("  ✅ 路径白名单精确通过（允许：" + ($allowed -join '; ') + "）")
 
 Write-Output "==> 提交建议"
 Write-Output "  git add -A && git commit -m 'build: release'"

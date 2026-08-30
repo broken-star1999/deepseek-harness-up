@@ -108,10 +108,33 @@ pub fn is_dsh_pid(pid: u32) -> bool {
     .ok();
     if let Some(o) = out {
         let line = String::from_utf8_lossy(&o.stdout).to_lowercase();
-        // 严格匹配：@deepseek-ai 包路径，或 deepseek-harness 项目 + node_modules 组合
-        // （去掉裸 bin.js：其他 node 程序也可能使用该文件名）
-        return line.contains("@deepseek-ai")
-            || (line.contains("deepseek-harness") && line.contains("node_modules"));
+        // 精确匹配：命令行必须包含已定位的官方包入口路径（@deepseek-ai\dsh\lib\bin.js）
+        let loc = crate::dsh_locator::locate();
+        let mut expected: Vec<String> = Vec::new();
+        if let Some(pkg) = loc.pkg_dir {
+            expected.push(
+                pkg.join("lib")
+                    .join("bin.js")
+                    .to_string_lossy()
+                    .to_lowercase(),
+            );
+        }
+        if let Some(root) = loc.npm_root {
+            expected.push(
+                std::path::PathBuf::from(&root)
+                    .join("@deepseek-ai")
+                    .join("dsh")
+                    .join("lib")
+                    .join("bin.js")
+                    .to_string_lossy()
+                    .to_lowercase(),
+            );
+        }
+        // 精确路径命中 → 是 dsh；否则兜底仅认 @deepseek-ai 包名（高于之前的宽松度）
+        if expected.iter().any(|e| line.contains(e)) {
+            return true;
+        }
+        return line.contains("@deepseek-ai");
     }
     false
 }

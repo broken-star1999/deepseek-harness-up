@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   # 路径脱敏（与 scripts/make-release.ps1 同理）：重映射 runner 本机路径，产物不含用户名/目录

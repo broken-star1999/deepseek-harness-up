@@ -2,7 +2,7 @@
 
 本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/) 与 [Conventional Commits](https://www.conventionalcommits.org/zh-hans/)。
 
-## [Unreleased] - 2026-09-01
+## [0.2.8] - 2026-09-01
 
 ### 🛡 安全与边界
 - 自定义 npm 镜像改为严格 URL 校验：仅允许 http/https，拒绝 shell 元字符、认证信息、query 和 fragment；无效配置 fail closed

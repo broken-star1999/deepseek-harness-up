@@ -34,9 +34,9 @@ pub fn npm_cmd_path() -> Option<std::path::PathBuf> {
 /// npm 全局 root：始终使用 npm.cmd 的绝对路径，避免依赖当前进程 PATH。
 pub fn npm_global_root() -> Option<String> {
     let npm_cmd = npm_cmd_path()?;
-    let npm = npm_cmd.to_string_lossy().into_owned();
     // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
-    let out = crate::winutil::cmd_hidden(&["/C", &npm, "root", "-g"])
+    let out = crate::winutil::batch_hidden(&npm_cmd, &["root", "-g"])
+        .ok()?
         .output()
         .ok()?;
     if !out.status.success() {
@@ -83,6 +83,7 @@ pub fn where_first(name: &str) -> Option<String> {
         let t = line.trim();
         let low = t.to_lowercase();
         if !t.is_empty()
+            && std::path::Path::new(t).is_absolute()
             && (low.ends_with(".exe") || low.ends_with(".cmd") || low.ends_with(".bat"))
         {
             return Some(t.to_string());
@@ -153,4 +154,28 @@ pub fn pkg_version(pkg_dir: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(p).ok()?;
     let v: serde_json::Value = serde_json::from_str(&text).ok()?;
     v.get("version")?.as_str().map(|s| s.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovered_npm_can_execute_version_through_hidden_runner() {
+        let Some(npm) = npm_cmd_path() else {
+            return;
+        };
+        let output = crate::winutil::batch_hidden(&npm, &["--version"])
+            .expect("npm path should have safe command characters")
+            .output()
+            .expect("npm.cmd should start");
+        assert!(
+            output.status.success(),
+            "status={:?} stdout={:?} stderr={:?}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!String::from_utf8_lossy(&output.stdout).trim().is_empty());
+    }
 }

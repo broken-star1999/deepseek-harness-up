@@ -1,6 +1,7 @@
 mod dsh_locator;
 mod dsh_process;
 mod env_check;
+mod paths;
 mod uninstaller;
 mod updater;
 mod winutil;
@@ -17,6 +18,24 @@ static OPERATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// 获取操作锁（先锁后检查，防竞态窗口）
 fn op_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
     OPERATION_LOCK.lock().map_err(|_| "操作锁中毒".to_string())
+}
+
+/// 安装、更新、卸载前统一确认 dsh 已完全停止。
+/// 启动阶段也必须拦截，不能只看 3080 是否已经监听。
+fn ensure_dsh_stopped(state: &State<AppState>) -> Result<(), String> {
+    let mut dsh = state.dsh.lock().unwrap();
+    dsh_process::refresh(&mut dsh);
+    if dsh_process::own_alive(&mut dsh) {
+        return Err(if dsh.booting {
+            "dsh 核心正在启动，请等待启动完成或先停止核心".into()
+        } else {
+            "dsh 核心正在运行，请先停止核心".into()
+        });
+    }
+    if dsh_process::port_open() {
+        return Err("端口 3080 正被占用，请先停止占用它的 dsh 或其他进程".into());
+    }
+    Ok(())
 }
 
 pub struct AppState {
@@ -93,11 +112,14 @@ fn get_status(state: State<AppState>) -> StatusInfo {
         }
     };
     let mut dsh = state.dsh.lock().unwrap();
+    dsh_process::refresh(&mut dsh);
+    let booting = dsh_process::booting(&mut dsh);
     let running = dsh_process::running(&mut dsh);
-    let booting = false;
 
     let detail = if !loc.installed() {
         "未检测到全局 dsh（环境体检页可一键安装）".into()
+    } else if booting {
+        "核心启动中，正在等待端口 3080 就绪".into()
     } else if running {
         match dsh_process::port_pid() {
             Some(pid) => format!("正在运行（端口 3080, PID {}）", pid),
@@ -149,8 +171,9 @@ fn get_status(state: State<AppState>) -> StatusInfo {
             .and_then(|n| cmd_version_path(std::path::Path::new(n))),
         npm_version: crate::dsh_locator::npm_cmd_path().and_then(|npm| {
             let npm = npm.to_string_lossy().into_owned();
-            // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
-            let out = crate::winutil::cmd_hidden(&["/C", &npm, "-v"])
+            // npm.cmd 是批处理文件，统一使用参数引用和隐藏 cmd 调用。
+            let out = crate::winutil::batch_hidden(std::path::Path::new(&npm), &["-v"])
+                .ok()?
                 .output()
                 .ok()?;
             if out.status.success() {
@@ -224,12 +247,10 @@ fn check_update() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn update_dsh() -> Result<serde_json::Value, String> {
+fn update_dsh(state: State<AppState>) -> Result<serde_json::Value, String> {
     // 先锁后检查（防检查-执行竞态）
     let _guard = op_guard()?;
-    if dsh_process::port_open() {
-        return Err("dsh 核心正在运行，请先停止核心再更新".into());
-    }
+    ensure_dsh_stopped(&state)?;
     log_line("ACTION update_dsh: 开始更新 dsh");
     let out = updater::update_dsh().map_err(|e| {
         log_line(&format!("update_dsh 失败: {}", e));
@@ -256,6 +277,7 @@ fn env_action(action: String, state: State<AppState>) -> Result<serde_json::Valu
         }
         "install_dsh" => {
             let _guard = op_guard()?;
+            ensure_dsh_stopped(&state)?;
             let out = updater::install_dsh()?;
             Ok(serde_json::json!({ "ok": true, "message": format!("安装成功\n{}", out) }))
         }
@@ -287,12 +309,22 @@ fn uninstall(
     // 先停止 dsh：只对自己启动的进程或已确认的 dsh 执行停止。
     {
         let mut dsh = state.dsh.lock().unwrap();
-        if dsh_process::running(&mut dsh) {
+        dsh_process::refresh(&mut dsh);
+        if dsh_process::own_alive(&mut dsh) || dsh_process::running(&mut dsh) {
             dsh_process::stop(&mut dsh).map_err(|e| format!("卸载前停止 dsh 失败: {}", e))?;
         }
     }
-    let log = uninstaller::run(clear_config, clear_npx)?;
-    Ok(serde_json::json!({ "ok": true, "message": log }))
+    if !dsh_process::wait_port_closed(std::time::Duration::from_secs(3)) {
+        return Err("卸载前端口 3080 仍被占用，为安全起见已停止卸载".into());
+    }
+    let report = uninstaller::run(clear_config, clear_npx)?;
+    serde_json::to_value(report).map_err(|e| format!("序列化卸载结果失败: {}", e))
+}
+
+/// 返回卸载前的目标预览；只读取路径元信息，不解析 dsh 用户数据。
+#[tauri::command]
+fn uninstall_preview() -> uninstaller::UninstallPreview {
+    uninstaller::preview()
 }
 
 /// 内嵌显示 127.0.0.1:3080（Windows 上必须在 async command 中创建 child webview，避免死锁）
@@ -719,11 +751,7 @@ async fn dialog_confirm(
         mode, no_remind
     ));
     if no_remind && (mode == "exit" || mode == "minimize") {
-        let mut s = settings_snapshot();
-        s["close_default"] = serde_json::json!(mode);
-        let dir = settings_path().parent().unwrap().to_path_buf();
-        let _ = std::fs::create_dir_all(&dir);
-        save_settings(&s).map_err(|__e| {
+        update_settings(|s| s["close_default"] = serde_json::json!(&mode)).map_err(|__e| {
             log_line(&format!("保存设置失败: {}", __e));
             __e
         })?;
@@ -760,11 +788,8 @@ fn start_drag(window: Window) -> Result<(), String> {
 }
 
 /// ===== 设置存储（%LOCALAPPDATA%/dsh-up/settings.json）=====
-fn settings_path() -> std::path::PathBuf {
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    std::path::PathBuf::from(la)
-        .join("dsh-up")
-        .join("settings.json")
+fn settings_path() -> Result<std::path::PathBuf, String> {
+    crate::paths::settings_path()
 }
 
 /// 设置写入锁：保护读-改-写事务，避免多个 IPC 调用互相覆盖。
@@ -808,15 +833,37 @@ fn replace_file(src: &std::path::Path, dst: &std::path::Path) -> Result<(), Stri
     }
 }
 
+fn load_settings_file(p: &std::path::Path) -> Option<serde_json::Value> {
+    std::fs::read_to_string(p)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+/// 调用方必须持有 SETTINGS_LOCK。
+fn load_settings_locked(p: &std::path::Path) -> serde_json::Value {
+    if let Some(v) = load_settings_file(p) {
+        return v;
+    }
+    // 主文件损坏/缺失 → 尝试 .bak 恢复。
+    let bak = p.with_file_name("settings.json.bak");
+    if let Some(v) = load_settings_file(&bak) {
+        log_line("settings_snapshot: 主文件不可用，已从 .bak 恢复");
+        if let Err(e) = std::fs::copy(&bak, p) {
+            log_line(&format!("settings_snapshot: 恢复主文件失败: {}", e));
+        }
+        return v;
+    }
+    serde_json::json!({})
+}
+
+/// 调用方必须持有 SETTINGS_LOCK。
 /// 统一设置写入：唯一临时文件 → 备份旧文件 → 原子替换新文件。
-fn save_settings(s: &serde_json::Value) -> Result<(), String> {
+fn save_settings_locked(p: &std::path::Path, s: &serde_json::Value) -> Result<(), String> {
     use std::io::Write;
-    let _guard = SETTINGS_LOCK.lock().map_err(|_| "设置锁中毒".to_string())?;
-    let p = settings_path();
     let dir = p.parent().ok_or_else(|| "设置路径没有父目录".to_string())?;
     std::fs::create_dir_all(dir).map_err(|e| format!("创建设置目录失败: {}", e))?;
 
-    let tmp = settings_tmp_path(&p);
+    let tmp = settings_tmp_path(p);
     let data = serde_json::to_vec_pretty(s).map_err(|e| format!("序列化设置失败: {}", e))?;
     let write_result = (|| -> Result<(), String> {
         let mut f = std::fs::OpenOptions::new()
@@ -839,24 +886,37 @@ fn save_settings(s: &serde_json::Value) -> Result<(), String> {
 
     let bak = p.with_file_name("settings.json.bak");
     if p.is_file() {
-        std::fs::copy(&p, &bak).map_err(|e| {
+        std::fs::copy(p, &bak).map_err(|e| {
             let _ = std::fs::remove_file(&tmp);
             format!("备份旧设置失败: {}", e)
         })?;
     }
-    if let Err(e) = replace_file(&tmp, &p) {
+    if let Err(e) = replace_file(&tmp, p) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
     Ok(())
 }
 
+/// 在同一把锁内完成读取、修改和保存，避免不同 IPC 调用互相覆盖字段。
+fn update_settings<F>(mutator: F) -> Result<(), String>
+where
+    F: FnOnce(&mut serde_json::Value),
+{
+    let _guard = SETTINGS_LOCK.lock().map_err(|_| "设置锁中毒".to_string())?;
+    let p = settings_path()?;
+    let mut settings = load_settings_locked(&p);
+    mutator(&mut settings);
+    save_settings_locked(&p, &settings)
+}
+
 /// 运行日志（%LOCALAPPDATA%\dsh-up\log.txt）：
 /// - 记录所有运行路径（启动/检查/弹窗/更新/卸载/错误）
 /// - 超过 1MB 自动轮转为 log.1.txt（保留最近一份）
 fn log_line(msg: &str) {
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let p = std::path::PathBuf::from(la).join("dsh-up").join("log.txt");
+    let Ok(p) = crate::paths::log_path() else {
+        return;
+    };
     if let Some(d) = p.parent() {
         let _ = std::fs::create_dir_all(d);
     }
@@ -883,10 +943,9 @@ fn log_line(msg: &str) {
 /// 安装日志尾部（前端安装进度滚动显示）
 #[tauri::command]
 fn tail_install_log() -> String {
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let p = std::path::PathBuf::from(la)
-        .join("dsh-up")
-        .join("install.log");
+    let Ok(p) = crate::paths::install_log_path() else {
+        return String::new();
+    };
     match std::fs::read_to_string(&p) {
         Ok(s) => {
             let tail: String = s
@@ -916,29 +975,27 @@ fn open_external(url: String) -> Result<(), String> {
 /// 设置 dsh 更新镜像（npmmirror / npmjs / custom:<url>）
 #[tauri::command]
 fn set_mirror(mirror: String) -> Result<(), String> {
-    let allowed = mirror == "npmmirror" || mirror == "npmjs" || mirror.starts_with("custom:");
-    if !allowed {
-        return Err("无效镜像".into());
-    }
-    let mut s = settings_snapshot();
-    s["mirror"] = serde_json::json!(mirror);
-    save_settings(&s)?;
-    log_line(&format!("set_mirror: {}", mirror));
+    let normalized = updater::normalize_mirror(Some(&mirror))?;
+    update_settings(|s| s["mirror"] = serde_json::json!(&normalized))?;
+    log_line(&format!(
+        "set_mirror: {}",
+        updater::mirror_log_value(&normalized)
+    ));
     Ok(())
 }
 
 #[tauri::command]
 fn get_mirror() -> Option<String> {
-    settings_snapshot()
+    let raw = settings_snapshot()
         .get("mirror")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
+        .map(str::to_string);
+    updater::normalize_mirror(raw.as_deref()).ok()
 }
 
 #[tauri::command]
 fn open_logs() -> Result<(), String> {
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    let dir = crate::paths::dsh_up_dir()?;
     crate::winutil::exe_hidden("explorer.exe", &[dir.to_string_lossy().as_ref()])
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -952,26 +1009,13 @@ fn fe_log(msg: String) {
 }
 
 fn settings_snapshot() -> serde_json::Value {
-    let _guard = SETTINGS_LOCK.lock().ok();
-    let load = |p: &std::path::Path| -> Option<serde_json::Value> {
-        std::fs::read_to_string(p)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+    let Ok(_guard) = SETTINGS_LOCK.lock() else {
+        return serde_json::json!({});
     };
-    let p = settings_path();
-    if let Some(v) = load(&p) {
-        return v;
-    }
-    // 主文件损坏/缺失 → 尝试 .bak 恢复。
-    let bak = p.with_file_name("settings.json.bak");
-    if let Some(v) = load(&bak) {
-        log_line("settings_snapshot: 主文件不可用，已从 .bak 恢复");
-        if let Err(e) = std::fs::copy(&bak, &p) {
-            log_line(&format!("settings_snapshot: 恢复主文件失败: {}", e));
-        }
-        return v;
-    }
-    serde_json::json!({})
+    let Ok(p) = settings_path() else {
+        return serde_json::json!({});
+    };
+    load_settings_locked(&p)
 }
 
 /// 系统文件选择对话框选壁纸（PowerShell OpenFileDialog，独立窗口）
@@ -1006,14 +1050,12 @@ fn pick_and_set_bg() -> Result<String, String> {
         return Err("不支持的图片格式（仅支持 PNG/JPEG/WebP）".into());
     }
     // 写入固定位置 bg.png + 写 settings
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    let dir = crate::paths::dsh_up_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("bg.png");
     std::fs::write(&dest, &bytes).map_err(|e| format!("保存图片失败: {}", e))?;
-    let mut s = settings_snapshot();
-    s["bg"] = serde_json::json!(dest.to_string_lossy().as_ref());
-    save_settings(&s).inspect_err(|_| {
+    let dest_value = dest.to_string_lossy().into_owned();
+    update_settings(|s| s["bg"] = serde_json::json!(&dest_value)).inspect_err(|_| {
         let _ = std::fs::remove_file(&dest);
     })?;
     log_line(&format!("set_bg: from {} -> {}", path, dest.display()));
@@ -1030,14 +1072,15 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
     if detect_image_mime(&data).is_none() {
         return Err("不支持的图片格式（仅支持 PNG/JPEG/WebP）".into());
     }
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let dir = std::path::PathBuf::from(&la).join("dsh-up");
+    let dir = crate::paths::dsh_up_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("bg.png");
     std::fs::write(&path, &data).map_err(|e| e.to_string())?;
-    let mut s = settings_snapshot();
-    s["bg"] = serde_json::json!(path.to_string_lossy());
-    save_settings(&s)?;
+    let path_value = path.to_string_lossy().into_owned();
+    if let Err(e) = update_settings(|s| s["bg"] = serde_json::json!(&path_value)) {
+        let _ = std::fs::remove_file(&path);
+        return Err(e);
+    }
     log_line("set_bg: saved");
     Ok(path.to_string_lossy().to_string())
 }
@@ -1045,13 +1088,12 @@ fn set_bg_bytes(data: Vec<u8>) -> Result<String, String> {
 /// 恢复默认壁纸（清 settings.bg + 删除自定义文件）
 #[tauri::command]
 fn reset_bg() -> Result<(), String> {
-    let mut s = settings_snapshot();
-    if let Some(m) = s.as_object_mut() {
-        m.remove("bg");
-    }
-    save_settings(&s)?;
-    let la = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let custom = std::path::PathBuf::from(&la).join("dsh-up").join("bg.png");
+    update_settings(|s| {
+        if let Some(m) = s.as_object_mut() {
+            m.remove("bg");
+        }
+    })?;
+    let custom = crate::paths::dsh_up_dir()?.join("bg.png");
     let _ = std::fs::remove_file(&custom);
     log_line("reset_bg: 恢复默认壁纸");
     Ok(())
@@ -1159,9 +1201,7 @@ fn set_close_default(value: String) -> Result<(), String> {
     if value != "exit" && value != "minimize" {
         return Err("无效的默认值".into());
     }
-    let mut s = settings_snapshot();
-    s["close_default"] = serde_json::json!(value);
-    save_settings(&s)?;
+    update_settings(|s| s["close_default"] = serde_json::json!(&value))?;
     log_line(&format!("set_close_default: 已保存 value={}", value));
     Ok(())
 }
@@ -1276,6 +1316,7 @@ pub fn run() {
             env_check,
             env_action,
             uninstall,
+            uninstall_preview,
             show_embed,
             hide_embed,
             update_embed_bounds,

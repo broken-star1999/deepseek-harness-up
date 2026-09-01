@@ -19,11 +19,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:3080 https://api.github.com"
     }
   },
   "bundle": {
-    "active": true,
+    "active": false,
     "targets": "all",
     "icon": [
       "icons/icon.ico"

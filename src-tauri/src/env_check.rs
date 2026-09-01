@@ -26,8 +26,9 @@ fn run_version(cmd: &str, arg: &str) -> Option<String> {
         other => (other.to_string(), false),
     };
     let out = if is_batch {
-        // npm.cmd 是批处理文件，必须经隐藏 cmd /C 调用。
-        crate::winutil::cmd_hidden(&["/C", &exe, arg])
+        // npm.cmd 是批处理文件，统一使用参数引用和隐藏 cmd 调用。
+        crate::winutil::batch_hidden(Path::new(&exe), &[arg])
+            .ok()?
             .output()
             .ok()?
     } else {
@@ -42,6 +43,22 @@ fn run_version(cmd: &str, arg: &str) -> Option<String> {
     } else {
         Some(value)
     }
+}
+
+fn webview2_installed() -> bool {
+    let mut roots = vec![
+        Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application").to_path_buf(),
+        Path::new(r"C:\Program Files\Microsoft\EdgeWebView\Application").to_path_buf(),
+    ];
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        roots.push(
+            Path::new(&local)
+                .join("Microsoft")
+                .join("EdgeWebView")
+                .join("Application"),
+        );
+    }
+    roots.into_iter().any(|root| root.is_dir())
 }
 
 fn item(
@@ -127,8 +144,7 @@ pub fn run() -> Vec<CheckItem> {
     ));
 
     // 4. WebView2 Runtime
-    let wv = Path::new(r"C:\Program Files (x86)\Microsoft\EdgeWebView\Application").exists()
-        || Path::new(r"C:\Program Files\Microsoft\EdgeWebView\Application").exists();
+    let wv = webview2_installed();
     items.push(item(
         "WebView2 Runtime",
         wv,
@@ -144,21 +160,27 @@ pub fn run() -> Vec<CheckItem> {
 
     // 5. 端口 3080
     let port = crate::dsh_process::port_open();
+    let owner = crate::dsh_process::port_pid();
+    let dsh_owner = owner.map(crate::dsh_process::is_dsh_pid).unwrap_or(false);
     items.push(item(
         "端口 3080",
-        !port,
-        false,
+        !port || dsh_owner,
+        port && !dsh_owner,
         if port {
-            format!("已被占用（PID {:?}）", crate::dsh_process::port_pid())
+            if dsh_owner {
+                format!("dsh 正在使用（PID {:?}）", owner)
+            } else {
+                format!("被非 dsh 进程占用（PID {:?}）", owner)
+            }
         } else {
             "空闲".into()
         },
-        if port { Some("stop_port_owner") } else { None },
-        if port {
-            Some("结束占用进程")
+        if dsh_owner {
+            Some("stop_port_owner")
         } else {
             None
         },
+        if dsh_owner { Some("停止 dsh") } else { None },
     ));
 
     items

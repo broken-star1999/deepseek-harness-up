@@ -2,6 +2,19 @@ const invoke = window.__TAURI__.core.invoke;
 
 const SK = {
   init() {
+    document.getElementById('settings-backdrop').addEventListener('click', () => this.close());
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => this.switchTab(tab.dataset.tab));
+    });
+    document.getElementById('btn-upd-dsh').addEventListener('click', () => this.checkDshUpdate());
+    document.getElementById('btn-upd-dsh-do').addEventListener('click', () => this.doUpdate());
+    document.getElementById('btn-upd-app').addEventListener('click', () => this.checkAppUpdate());
+    document.getElementById('btn-upd-app-dl').addEventListener('click', () => this.downloadApp());
+    document.getElementById('btn-pick-bg').addEventListener('click', () => this.pickBg());
+    document.getElementById('btn-reset-bg').addEventListener('click', () => this.resetBg());
+    document.getElementById('btn-open-logs').addEventListener('click', () => this.openLogs());
+    document.getElementById('btn-close-settings').addEventListener('click', () => this.close());
+    document.getElementById('btn-save-settings').addEventListener('click', () => this.save());
     // 回填 ✕行为/镜像 + about
     invoke('get_close_default').then((v) => {
       const val = v || 'minimize';

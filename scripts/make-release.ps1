@@ -4,7 +4,14 @@ $ErrorActionPreference = "Stop"
 Set-Location "$PSScriptRoot\.."
 
 Write-Output "==> 清理运行进程"
-Get-Process "deepseek-harness-up" -ErrorAction SilentlyContinue | Stop-Process -Force
+$releaseExe = [IO.Path]::GetFullPath((Join-Path "$PSScriptRoot\..\src-tauri\target\release" "deepseek-harness-up.exe"))
+$running = Get-CimInstance Win32_Process -Filter "Name='deepseek-harness-up.exe'" -ErrorAction SilentlyContinue
+foreach ($process in $running) {
+  if ($process.ExecutablePath -and $process.ExecutablePath -ieq $releaseExe) {
+    Stop-Process -Id $process.ProcessId -Force
+    Write-Output ("  已停止当前项目进程 PID " + $process.ProcessId)
+  }
+}
 
 Write-Output "==> 构建 release"
 # 路径脱敏：编译期重映射本机路径，避免 exe 泄漏用户名/目录（零硬编码，任何机器通用）
@@ -16,19 +23,26 @@ cargo build --release --manifest-path src-tauri\Cargo.toml
 if ($LASTEXITCODE -ne 0) { throw "构建失败" }
 
 Write-Output "==> 复制产物到 dist/"
-New-Item -ItemType Directory -Path "dist" -Force | Out-Null
-Copy-Item "src-tauri\target\release\deepseek-harness-up.exe" "dist\deepseek-harness-up.exe" -Force
-$f = Get-Item "dist\deepseek-harness-up.exe"
+$distPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\dist"))
+New-Item -ItemType Directory -Path $distPath -Force | Out-Null
+$unexpected = @(Get-ChildItem -LiteralPath $distPath -Force | Where-Object { $_.Name -ne "deepseek-harness-up.exe" })
+if ($unexpected.Count -gt 0) {
+  throw ("dist/ 必须只包含单 EXE，发现额外文件: " + (($unexpected | ForEach-Object { $_.Name }) -join ', '))
+}
+$sourceExe = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\src-tauri\target\release\deepseek-harness-up.exe"))
+$distExe = Join-Path $distPath "deepseek-harness-up.exe"
+Copy-Item -LiteralPath $sourceExe -Destination $distExe -Force
+$f = Get-Item -LiteralPath $distExe
 Write-Output ("✅ 发布产物: dist\deepseek-harness-up.exe (" + [math]::Round($f.Length/1MB,2) + " MB)")
 
 Write-Output "==> 发布闸门检查"
 # 1) 版本号内嵌检查
-$fi = [Diagnostics.FileVersionInfo]::GetVersionInfo("dist\deepseek-harness-up.exe")
+$fi = [Diagnostics.FileVersionInfo]::GetVersionInfo($distExe)
 $want = (Select-String -Path "src-tauri\Cargo.toml" -Pattern '^version').Line -replace '.*"([^"]+)".*','$1'
 Write-Output ("  版本: " + $fi.FileVersion + " (期望 " + $want + ")")
 if ($fi.FileVersion -ne $want.Trim()) { throw "版本号不一致: $($fi.FileVersion) != $want" }
 # 2) 路径泄漏检查（本机用户名/CI runner 路径）
-$bytes = [IO.File]::ReadAllBytes("dist\deepseek-harness-up.exe")
+$bytes = [IO.File]::ReadAllBytes($distExe)
 $text = [Text.Encoding]::ASCII.GetString($bytes)
 # ASCII + UTF-16 双解码扫描（中文用户名也不会漏）
 $text16 = [Text.Encoding]::Unicode.GetString($bytes)

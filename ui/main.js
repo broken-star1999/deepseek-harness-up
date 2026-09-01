@@ -52,14 +52,21 @@ const UI = {
     });
 
     document.getElementById('btn-uninstall').onclick = () => this.openModal();
+    document.getElementById('btn-recheck').onclick = () => this.recheck();
+    document.getElementById('btn-check-update').onclick = () => this.manualCheckUpdate();
+    document.getElementById('btn-settings').onclick = () => this.openSettings();
+    document.getElementById('btn-cancel-update').onclick = () => this.closeUpdateModal();
+    document.getElementById('btn-do-update').onclick = () => this.doUpdate();
+    document.getElementById('btn-cancel-uninstall').onclick = () => this.closeModal();
+    document.getElementById('btn-do-uninstall').onclick = () => this.doUninstall();
     document.getElementById('btn-node').onclick = () => this.busyAction('installNode');
     document.getElementById('btn-dsh').onclick = async () => {
-    if (this.ctx && !this.ctx.nodeVersion) {
-      this.toast('请先安装 Node.js', 'warn');
-      return;
-    }
-    this.busyAction('installDsh');
-  };
+      if (this.ctx && !this.ctx.nodeVersion) {
+        this.toast('请先安装 Node.js', 'warn');
+        return;
+      }
+      await this.busyAction('installDsh');
+    };
     document.getElementById('btn-core').onclick = () => {
       if (this.ctx && this.ctx.running) this.stopCore();
       else this.launch();
@@ -72,13 +79,14 @@ const UI = {
       }
     });
 
-    // 页面1 状态轮询（10s）：环境变化（装完Node/dsh）自动刷新按钮，不闪转圈
+    // 页面1 状态轮询（10s）：环境变化（装完Node/dsh/启动状态）自动刷新按钮，不闪转圈
     setInterval(async () => {
       if (this.embedActive) return;
       try {
         const s = await invoke('get_status');
         const c = this.ctx || {};
         const changed = c.installed !== s.installed || c.running !== s.running ||
+          c.booting !== s.booting || c.portOpen !== s.portOpen ||
           c.nodeVersion !== s.nodeVersion || c.dshVersion !== s.dshVersion;
         if (changed) {
           this.ctx = s;
@@ -106,13 +114,17 @@ const UI = {
 
   async checkEnv() {
     this.showChecking();
-    let ctx;
-    try {
-      ctx = await invoke('get_status');
-    } catch (e) {
-      ctx = { installed: false, nodeVersion: null, dshVersion: null, running: false };
-    }
-    this.ctx = ctx;
+    const statusPromise = invoke('get_status').catch(() => ({
+      installed: false,
+      nodeVersion: null,
+      dshVersion: null,
+      running: false,
+      booting: false,
+      portOpen: false,
+    }));
+    const envPromise = invoke('env_check').catch(() => []);
+    const [status, envItems] = await Promise.all([statusPromise, envPromise]);
+    this.ctx = { ...status, envItems: Array.isArray(envItems) ? envItems : [] };
     this.renderActions();
     // 后台异步检查更新（不阻塞界面）
     try { await this.checkUpdate(); } catch (e) {}
@@ -131,6 +143,7 @@ const UI = {
     const c = this.ctx;
     const hasNode = !!c.nodeVersion;
     const hasDsh = c.installed;
+    this.renderEnvItems(c.envItems || []);
     // 版本信息
     document.getElementById('version-badge').textContent =
       c.dshVersion ? '版本 ' + c.dshVersion : (hasNode ? '环境就绪' : '');
@@ -156,6 +169,59 @@ const UI = {
     document.getElementById('action-view').classList.remove('hidden');
   },
 
+  renderEnvItems(items) {
+    const root = document.getElementById('env-status');
+    if (!root) return;
+    root.textContent = '';
+    if (!items.length) {
+      root.classList.add('hidden');
+      return;
+    }
+    root.classList.remove('hidden');
+    items.forEach((item) => {
+      const row = document.createElement('div');
+      row.className = 'env-item ' + (item.ok ? 'ok' : item.warn ? 'warn' : 'bad');
+      const text = document.createElement('span');
+      const mark = item.ok ? '✓' : item.warn ? '!' : '×';
+      text.textContent = mark + ' ' + item.name + '：' + item.detail;
+      row.appendChild(text);
+      if (item.action && item.actionLabel) {
+        const action = document.createElement('button');
+        action.className = 'btn small';
+        action.textContent = item.actionLabel;
+        action.addEventListener('click', () => this.envAction(item.action));
+        row.appendChild(action);
+      }
+      root.appendChild(row);
+    });
+  },
+
+  async envAction(action) {
+    if (this.busy) return;
+    if (action === 'node_download') {
+      await this.busyAction('installNode');
+      return;
+    }
+    if (action === 'install_dsh') {
+      await this.busyAction('installDsh');
+      return;
+    }
+    this.busy = true;
+    try {
+      await invoke('env_action', { action });
+      if (action === 'webview2_download') {
+        this.toast('已打开 WebView2 官方下载页', 'ok');
+      } else if (action === 'stop_port_owner') {
+        this.toast('已请求停止 dsh', 'ok');
+      }
+    } catch (e) {
+      this.toast('操作失败: ' + e, 'warn');
+    } finally {
+      this.busy = false;
+      await this.checkEnv();
+    }
+  },
+
   // 按钮色态：核心未启动=打开灰；核心运行=打开绿
   applyButtonStates(c) {
     const coreBtn = document.getElementById('btn-core');
@@ -163,15 +229,7 @@ const UI = {
     const coreLabel = document.getElementById('core-label');
     if (!coreBtn) return;
     // 核心按钮：未运行=绿色"启动核心"，运行中=红色"停止核心"
-    if (c.running) {
-      coreBtn.classList.remove('disabled', 'green');
-      coreBtn.classList.add('red');
-      coreBtn.disabled = false;
-      coreLabel.textContent = '停止核心';
-      openBtn.classList.remove('disabled');
-      openBtn.classList.add('green');
-      openBtn.disabled = false;
-    } else if (c.booting) {
+    if (c.booting) {
       coreBtn.classList.remove('green', 'red');
       coreBtn.classList.add('disabled');
       coreBtn.disabled = true;
@@ -179,6 +237,14 @@ const UI = {
       openBtn.classList.add('disabled');
       openBtn.classList.remove('green');
       openBtn.disabled = true;
+    } else if (c.running) {
+      coreBtn.classList.remove('disabled', 'green');
+      coreBtn.classList.add('red');
+      coreBtn.disabled = false;
+      coreLabel.textContent = '停止核心';
+      openBtn.classList.remove('disabled');
+      openBtn.classList.add('green');
+      openBtn.disabled = false;
     } else {
       // 未运行：绿色启动核心
       coreBtn.classList.remove('disabled', 'red');
@@ -209,7 +275,7 @@ const UI = {
   async busyAction(kind) {
     if (this.busy) return;
     // 安装/更新 dsh 前：运行中的核心占用包文件，会失败（Windows）
-    if (kind === 'installDsh' && this.ctx && this.ctx.running) {
+    if (kind === 'installDsh' && this.ctx && (this.ctx.running || this.ctx.booting)) {
       this.toast('请先停止核心再安装 dsh', 'warn');
       return;
     }
@@ -324,7 +390,7 @@ const UI = {
   },
 
   async doUpdate() {
-    if (this.ctx && this.ctx.running) {
+    if (this.ctx && (this.ctx.running || this.ctx.booting)) {
       this.toast('请先停止核心再更新', 'warn');
       return;
     }
@@ -480,7 +546,26 @@ const UI = {
     } catch (e) {}
   },
 
-  openModal() {
+  async openModal() {
+    document.getElementById('chk-config').checked = false;
+    document.getElementById('chk-npx').checked = false;
+    const target = document.getElementById('uninstall-target');
+    if (target) target.textContent = '正在读取卸载范围…';
+    try {
+      const preview = await invoke('uninstall_preview');
+      if (target) {
+        const lines = [];
+        if (preview && preview.dshHome) {
+          lines.push('dsh 数据目录：' + preview.dshHome.path + (preview.dshHome.exists ? '' : '（不存在）'));
+        }
+        if (preview && preview.npxCache) {
+          lines.push('npx 缓存目录：' + preview.npxCache.path + (preview.npxCache.exists ? '' : '（不存在）'));
+        }
+        target.textContent = lines.length ? lines.join('\n') : '未能确定可清理目录';
+      }
+    } catch (e) {
+      if (target) target.textContent = '无法读取卸载范围，请检查环境';
+    }
     document.getElementById('modal').classList.remove('hidden');
   },
   closeModal() {
@@ -490,15 +575,29 @@ const UI = {
   async doUninstall() {
     const cfg = document.getElementById('chk-config').checked;
     const npx = document.getElementById('chk-npx').checked;
+    if (cfg && !window.confirm('彻底卸载将永久删除 dsh 的 profiles、会话记录和其他用户数据，且无法恢复。继续吗？')) {
+      return;
+    }
     const log = document.getElementById('modal-log');
+    const button = document.getElementById('btn-do-uninstall');
+    if (button) button.disabled = true;
     log.textContent = '卸载中…';
     try {
       const r = await invoke('uninstall', { clearConfig: cfg, clearNpx: npx });
       log.textContent = (r.ok ? '' : '⚠ ') + (r.message || '完成');
-    } catch (e) { log.textContent = '失败: ' + e; }
+      if (!r.ok) {
+        if (button) button.disabled = false;
+        return;
+      }
+    } catch (e) {
+      log.textContent = '失败: ' + e;
+      if (button) button.disabled = false;
+      return;
+    }
     setTimeout(async () => {
       this.closeModal();
       document.getElementById('modal-log').textContent = '';
+      if (button) button.disabled = false;
       try { await invoke('invalidate_locator_cache'); } catch (e) {}
       await this.checkEnv();
     }, 1200);

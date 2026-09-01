@@ -22,8 +22,8 @@ feat: 新功能      fix: 修复       docs: 文档      chore: 杂项      styl
 
 ## 代码约定
 
-- **非侵入原则**（重要）：只调用 dsh 的公共 CLI / npm 生态 / 只读观测；绝不接触 `~/.dsh` 内部结构或 dsh 内部 API（这是工具不会因 dsh 大更新而失效的根基）
-- 进程调用必须走 `src-tauri/src/winutil.rs`（统一 `CREATE_NO_WINDOW`，禁止裸 `cmd`）
+- **外部管理原则**（重要）：正常运行只调用 dsh 的公共 CLI / npm 生态 / 只读观测，不依赖 dsh 内部 API 或内部运行逻辑。用户明确选择彻底卸载后，可以删除 `~/.dsh` 用户数据；其他流程不得解析或修改该目录（这是降低 dsh 大更新影响的根基）
+- 进程调用必须走 `src-tauri/src/winutil.rs`（统一 `CREATE_NO_WINDOW`；npm 等批处理必须使用 `batch_hidden`，禁止裸 `cmd`）
 - 前端脚本改动后运行 `node --check`；修改 IPC 契约需前后端同步
 
 ## Issue / PR

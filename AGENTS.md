@@ -8,8 +8,8 @@ DeepSeek Harness Up：Windows 桌面工具（Tauri 2 + Rust 后端 + 无框架 W
 
 ## 关键约定（必须遵守）
 
-1. **非侵入原则**：只依赖 dsh 公共 CLI / npm 生态 / 只读观测。禁止接触 `~/.dsh` 内部结构、dsh 内部 API、修改 dsh 用户数据。
-2. **窗口零闪烁**：所有进程调用统一走 `src-tauri/src/winutil.rs` 的 `cmd_hidden`/`exe_hidden`（CREATE_NO_WINDOW）。禁止裸 `Command::new("cmd")`。
+1. **外部管理原则**：正常运行只依赖 dsh 公共 CLI / npm 生态 / 只读观测，不接触 dsh 内部 API 或内部运行逻辑。用户明确确认“彻底卸载”后，可以删除 dsh 安装内容及其用户数据（例如 `~/.dsh`）；除该卸载动作外，不解析、不修改 dsh 用户数据。
+2. **窗口零闪烁**：所有进程调用统一走 `src-tauri/src/winutil.rs` 的 `cmd_hidden`/`exe_hidden`/`batch_hidden`（CREATE_NO_WINDOW）。禁止裸 `Command::new("cmd")`。
 3. **镜像一致性**：npm 命令必须带 `--registry`（读 settings mirror）。
 4. **路径密码**：产物名 `deepseek-harness-up`；本地目录 `C:\Users\star\Desktop\deepseek-harness-up`。
 
